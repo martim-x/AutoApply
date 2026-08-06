@@ -1,0 +1,39 @@
+"""HH-platform (rabota.by) CSS selectors."""
+
+SEL = {
+    "vacancy_link": (
+        'a[data-qa="serp-item__title"],'
+        'a[data-qa="vacancy-serp__vacancy-title"],'
+        'a[href*="/vacancy/"]'
+    ),
+    "response_btn": (
+        '[data-qa="vacancy-serp__vacancy_response"],'
+        '[data-qa="vacancy-response-link-top"],'
+        '[data-qa="vacancy__response-button"],'
+        'button:has-text("Откликнуться"),'
+        'a:has-text("Откликнуться")'
+    ),
+    "letter_area": (
+        'textarea[data-qa="vacancy-response-popup-form-letter-input"],'
+        'textarea[data-qa="textarea-letter"],'
+        'textarea[name="letter"],'
+        "textarea"
+    ),
+    "submit_response": (
+        '[data-qa="vacancy-response-submit-popup"],'
+        '[data-qa="vacancy-response-letter-submit"],'
+        'button:has-text("Отправить"),'
+        'button:has-text("Откликнуться")'
+    ),
+    "already": (
+        'button:has-text("Вы откликнулись"),'
+        'span:has-text("Вы откликнулись"),'
+        'a:has-text("Вы откликнулись"),'
+        '[data-qa="vacancy-serp__vacancy_response"]:has-text("Откликнулись")'
+    ),
+    "captcha": (
+        '[data-qa="account-captcha-picture"],'
+        'iframe[src*="captcha"],'
+        ".captcha"
+    ),
+}
