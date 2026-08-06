@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from app.domain.ports import UnitOfWork
 from app.infrastructure.settings import Settings, get_settings
 
@@ -13,7 +15,7 @@ def create_uow(settings: Settings | None = None) -> UnitOfWork:
     if settings.is_sqlite():
         path = settings.sqlite_path()
         assert path is not None
-        return SqliteUnitOfWork(path)
+        return cast(UnitOfWork, SqliteUnitOfWork(path))
 
     # Placeholder for future Postgres adapter:
     # from .postgres_uow import PostgresUnitOfWork

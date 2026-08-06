@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from app.infrastructure.alerts.smtp import send_smtp_alert
 from app.infrastructure.settings import Settings
@@ -122,19 +123,25 @@ class AlertService:
                 return False
             self._recent[key] = now
 
+        msg_short = message if len(message) <= 200 else message[:199] + "…"
         subject = f"[AutoApply] {event} · {profile}"
+        if len(subject) > 120:
+            subject = subject[:119] + "…"
         body_lines = [
             f"Profile: {profile}",
             f"Event: {event}",
-            f"Message: {message}",
+            f"Message: {msg_short}",
         ]
         if details:
             body_lines.append("Details:")
-            for k, v in details.items():
-                body_lines.append(f"  {k}: {v}")
+            for k, v in list(details.items())[:12]:
+                line = f"  {k}: {v}"
+                body_lines.append(line if len(line) <= 200 else line[:199] + "…")
         body_lines.append("")
         body_lines.append("Open the AutoApply UI to resume or fix the session.")
         body = "\n".join(body_lines)
+        if len(body) > 2000:
+            body = body[:1999] + "…"
 
         sent = False
         try:

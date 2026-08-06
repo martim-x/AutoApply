@@ -31,6 +31,9 @@ services:
       # So /admin can edit .env and changes survive restart
       - ./.env:/app/.env
       - ./config:/app/config
+      # Local DX: live-mount app (static/templates/Python) — UI changes without rebuild.
+      # Rebuild still required when poetry.lock / Dockerfile / system deps change.
+      - ./app:/app/app
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health')"]
       interval: 30s

@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.domain.filters import (  # noqa: E402
+from app.domain.filters import (
     evaluate_vacancy,
     has_python_signal,
     is_gov_related,

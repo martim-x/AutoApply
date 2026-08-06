@@ -91,12 +91,11 @@ class LinkedInBrowserGateway:
         from playwright.sync_api import sync_playwright
 
         uow = self.uow
-        s = self.settings
         uow.jobs.set_status(
             profile, JobStatus.LOGGING_IN, "Откройте браузер и войдите в LinkedIn"
         )
         uow.journal.log(profile, "linkedin_login_start", LINKEDIN_LOGIN)
-        setattr(stop_flag, "save_now", False)
+        stop_flag.save_now = False
 
         with sync_playwright() as p:
             browser, context, sp = self._launch(p, profile)

@@ -29,7 +29,7 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    app_name: str = "RABOTA_APPLY"
+    app_name: str = "AutoApply"
     host: str = "0.0.0.0"
     port: int = 8080
     debug: bool = False

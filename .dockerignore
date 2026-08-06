@@ -21,3 +21,6 @@ agent-transcripts
 .cursor
 docs
 tests
+README.md
+PUSH_WHEN_READY.md
+requirements.txt

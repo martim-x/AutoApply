@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from app.domain.enums import FitCategory
 from app.domain.scoring import score_vacancy
-from app.domain.scoring.explain import explanations_for_seed_variants
 from app.domain.scoring.engine import load_weight_map
+from app.domain.scoring.explain import explanations_for_seed_variants
 
 
 def test_high_legend_stack_remote():

@@ -18,7 +18,6 @@ from app.domain.launch_profile import (
 )
 from app.domain.scoring import score_vacancy
 
-
 SAMPLE = """
 site: rabota.by
 country: Беларусь

@@ -5,7 +5,14 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from fastapi import APIRouter, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    HTTPException,
+    Query,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from pydantic import BaseModel, Field
 
 
@@ -15,6 +22,15 @@ class ProfileBody(BaseModel):
 
 class NewProfileBody(BaseModel):
     name: str = Field(min_length=1, max_length=64)
+
+
+class RenameProfileBody(BaseModel):
+    new_name: str = Field(min_length=1, max_length=64)
+
+
+class RenameProfilePostBody(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    new_name: str = Field(min_length=1, max_length=64)
 
 
 class RemoteStopBody(BaseModel):
@@ -76,6 +92,31 @@ def create_api_router() -> APIRouter:
     @router.post("/profiles")
     def create_profile(body: NewProfileBody, request: Request) -> dict[str, Any]:
         return svc(request).ensure_profile(body.name)
+
+    @router.patch("/profiles/{name}")
+    def rename_profile(
+        name: str, body: RenameProfileBody, request: Request
+    ) -> dict[str, Any]:
+        result = svc(request).rename_profile(name, body.new_name)
+        if not result.get("ok"):
+            raise HTTPException(status_code=400, detail=result.get("error") or "rename failed")
+        return result
+
+    @router.post("/profiles/rename")
+    def rename_profile_post(
+        body: RenameProfilePostBody, request: Request
+    ) -> dict[str, Any]:
+        result = svc(request).rename_profile(body.name, body.new_name)
+        if not result.get("ok"):
+            raise HTTPException(status_code=400, detail=result.get("error") or "rename failed")
+        return result
+
+    @router.delete("/profiles/{name}")
+    def delete_profile(name: str, request: Request) -> dict[str, Any]:
+        result = svc(request).delete_profile(name)
+        if not result.get("ok"):
+            raise HTTPException(status_code=400, detail=result.get("error") or "delete failed")
+        return result
 
     @router.get("/status")
     def status(

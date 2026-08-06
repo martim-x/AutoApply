@@ -6,14 +6,17 @@
   const statusLabel = $("statusLabel");
   const statusMessage = $("statusMessage");
   const remoteModal = $("remoteModal");
+  const remotePanel = remoteModal ? remoteModal.querySelector(".remote-panel") : null;
   const remoteCanvas = $("remoteCanvas");
   const remoteOverlay = $("remoteOverlay");
   const remoteUrl = $("remoteUrl");
+  const btnRemoteFullscreen = $("btnRemoteFullscreen");
   const explainModal = $("explainModal");
   const launchModal = $("launchModal");
   const ctx = remoteCanvas.getContext("2d");
 
   let remoteEnabled = false;
+  let remoteRunning = false;
   let ws = null;
   let viewport = { width: 1280, height: 900 };
   let img = new Image();
@@ -21,14 +24,19 @@
   let launchLoaded = false;
   let remoteOverlayKey = null;
   let lastStatusCode = "idle";
+  let lastStatusMessage = "";
+  let lastBusy = false;
   let lastHasSession = false;
   let lastHasLiSession = false;
   let workspace = "hh";
   let liTab = "network";
+  let remoteFsDesired = false;
   const WORKSPACE_KEY = "aa-workspace";
 
   function profile() {
-    return profileSelect.value || "default";
+    if (profileSelect.value) return profileSelect.value;
+    if (profileSelect.options.length) return profileSelect.options[0].value;
+    return "";
   }
 
   async function api(path, opts = {}) {
@@ -48,26 +56,238 @@
     });
   }
 
+  function setBtnLabel(el, key) {
+    if (!el) return;
+    const label = el.querySelector(".btn-label") || el;
+    label.setAttribute("data-i18n", key);
+    label.textContent = t(key);
+  }
+
+  const MSG_MAX = 180;
+
+  function truncateMsg(text, max) {
+    const s = String(text ?? "");
+    const n = max == null ? MSG_MAX : max;
+    if (s.length <= n) return s;
+    return s.slice(0, Math.max(0, n - 1)) + "…";
+  }
+
+  function setStatusMessage(text) {
+    statusMessage.textContent = truncateMsg(text);
+  }
+
   function setBusy(busy) {
-    ["btnLogin", "btnRemoteBrowser", "btnSearch", "btnApply"].forEach((id) => {
+    const hhBusyIds = ["btnLogin", "btnSearch", "btnApply", "btnLaunchCriteria"];
+    hhBusyIds.forEach((id) => {
       const el = $(id);
-      if (el) el.disabled = busy && id !== "btnRemoteBrowser";
+      if (el) el.disabled = !!busy;
     });
+    const liBusyIds = [
+      "btnLiLogin",
+      "btnLiNetwork",
+      "btnLiVacancies",
+      "btnLiCriteria",
+    ];
+    liBusyIds.forEach((id) => {
+      const el = $(id);
+      if (el) el.disabled = !!busy;
+    });
+    // Stop must stay clickable while a job (or remote browser) is running.
+    ["btnStop", "btnLiStop", "btnConfirm", "btnLiConfirm"].forEach((id) => {
+      const el = $(id);
+      if (el) el.disabled = false;
+    });
+    // Remote browser stays usable while connected (open/show viewer).
+    const remoteBtn = $("btnRemoteBrowser");
+    if (remoteBtn) remoteBtn.disabled = false;
   }
 
   function syncLoginLabel() {
     const loginLabel = document.querySelector("[data-label-login]");
     if (!loginLabel) return;
-    const key = remoteEnabled ? "login.remote" : "login.connect";
-    loginLabel.setAttribute("data-i18n", key);
-    loginLabel.textContent = t(key);
+    loginLabel.setAttribute("data-i18n", "login.connect");
+    loginLabel.textContent = t("login.connect");
+  }
+
+  function syncActionLabels(status, message, busy) {
+    const code = status || "idle";
+    const msg = String(message || "").toLowerCase();
+    const searching = code === "searching";
+    const applying = code === "applying";
+    const waitingUser = code === "waiting_user" || code === "logging_in";
+    const liNetwork = searching && msg.includes("network");
+    const liVacancies =
+      searching && (msg.includes("vacanc") || msg.includes("job"));
+
+    const btnSearch = $("btnSearch");
+    if (btnSearch) {
+      const active = searching && workspace === "hh";
+      setBtnLabel(btnSearch, active ? "search.busy" : "search");
+      btnSearch.classList.toggle("is-busy", active);
+      btnSearch.classList.remove("is-primary", "primary");
+    }
+
+    const btnApply = $("btnApply");
+    if (btnApply) {
+      setBtnLabel(btnApply, applying ? "apply.busy" : "apply");
+      btnApply.classList.toggle("is-busy", applying);
+      btnApply.classList.remove("is-primary", "primary");
+    }
+
+    const btnRemote = $("btnRemoteBrowser");
+    if (btnRemote) {
+      const open =
+        remoteRunning ||
+        (remoteModal && !remoteModal.hidden) ||
+        (ws && ws.readyState === WebSocket.OPEN);
+      setBtnLabel(btnRemote, open ? "remote.show" : "remote.open");
+      // Highlight only while the remote viewer is actually open.
+      btnRemote.classList.toggle("is-primary", !!open);
+      btnRemote.classList.remove("primary");
+    }
+
+    const btnConfirm = $("btnConfirm");
+    if (btnConfirm) {
+      const warn = waitingUser && workspace === "hh";
+      btnConfirm.classList.remove("is-primary", "primary");
+      btnConfirm.classList.toggle("is-warn", warn);
+    }
+    const btnLiConfirm = $("btnLiConfirm");
+    if (btnLiConfirm) {
+      const warn = waitingUser && workspace === "linkedin";
+      btnLiConfirm.classList.remove("is-primary", "primary");
+      btnLiConfirm.classList.toggle("is-warn", warn);
+    }
+
+    const btnLiNetwork = $("btnLiNetwork");
+    if (btnLiNetwork) {
+      setBtnLabel(
+        btnLiNetwork,
+        liNetwork ? "linkedin.network.busy" : "linkedin.network"
+      );
+      btnLiNetwork.classList.toggle("is-busy", liNetwork);
+      btnLiNetwork.classList.remove("is-primary", "primary");
+    }
+    const btnLiVacancies = $("btnLiVacancies");
+    if (btnLiVacancies) {
+      setBtnLabel(
+        btnLiVacancies,
+        liVacancies ? "linkedin.vacancies.busy" : "linkedin.vacancies"
+      );
+      btnLiVacancies.classList.toggle("is-busy", liVacancies);
+      btnLiVacancies.classList.remove("is-primary", "primary");
+    }
+
+    ["btnLogin", "btnLiLogin"].forEach((id) => {
+      const el = $(id);
+      if (el) el.classList.remove("is-primary", "primary", "is-busy");
+    });
+
+    syncLoginLabel();
+    setBusy(!!busy);
   }
 
   function applyRemoteUiFlag(enabled) {
     remoteEnabled = !!enabled;
-    $("btnRemoteBrowser").hidden = !remoteEnabled;
-    $("remoteHint").hidden = !remoteEnabled;
+    const btn = $("btnRemoteBrowser");
+    if (btn) btn.hidden = !remoteEnabled;
     syncLoginLabel();
+    syncActionLabels(lastStatusCode, lastStatusMessage, lastBusy);
+  }
+
+  function sessionLooksInvalid(status, message) {
+    const code = String(status || "");
+    const msg = String(message || "").toLowerCase();
+    if (code === "error" && /(сесс|session|login|войд|нет сесс)/i.test(msg)) {
+      return true;
+    }
+    return /(session_lost|нет сессии|session expired|invalid session|сессия истек)/i.test(
+      msg
+    );
+  }
+
+  function updateSessionBanner(st) {
+    const status = st.status || "idle";
+    const message = st.message || "";
+    const waiting =
+      status === "waiting_user" || status === "logging_in";
+    const invalid = sessionLooksInvalid(status, message);
+
+    const hh = $("sessionBannerHh");
+    const li = $("sessionBannerLi");
+
+    function paint(el, hasSession) {
+      if (!el) return;
+      el.classList.remove("is-error");
+      if (invalid || (status === "error" && !hasSession)) {
+        el.hidden = false;
+        el.classList.add("is-error");
+        el.textContent = t("session.invalid");
+        return;
+      }
+      if (waiting) {
+        el.hidden = false;
+        el.textContent = t("session.save.reminder");
+        return;
+      }
+      el.hidden = true;
+      el.textContent = "";
+    }
+
+    if (workspace === "linkedin") {
+      if (hh) {
+        hh.hidden = true;
+        hh.textContent = "";
+      }
+      paint(li, !!st.has_linkedin_session);
+    } else {
+      if (li) {
+        li.hidden = true;
+        li.textContent = "";
+      }
+      paint(hh, !!st.has_session);
+    }
+  }
+
+  function setReportMenuOpen(open) {
+    const btn = $("btnDownloadReport");
+    const panel = $("reportMenuPanel");
+    if (!btn || !panel) return;
+    panel.hidden = !open;
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  function downloadReport(kind) {
+    const k = kind === "linkedin" ? "linkedin" : "work";
+    const url =
+      `/api/reports/${encodeURIComponent(k)}.pdf` +
+      `?profile=${encodeURIComponent(profile())}`;
+    window.location.href = url;
+    setReportMenuOpen(false);
+  }
+
+  function initReportMenu() {
+    const btn = $("btnDownloadReport");
+    const panel = $("reportMenuPanel");
+    if (!btn || !panel) return;
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      setReportMenuOpen(panel.hidden);
+    };
+    panel.querySelectorAll("[data-report-kind]").forEach((item) => {
+      item.onclick = (e) => {
+        e.stopPropagation();
+        downloadReport(item.getAttribute("data-report-kind"));
+      };
+    });
+    document.addEventListener("click", (e) => {
+      const menu = $("reportMenu");
+      if (!menu || menu.contains(e.target)) return;
+      setReportMenuOpen(false);
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") setReportMenuOpen(false);
+    });
   }
 
   function statusDisplay(code) {
@@ -166,7 +386,7 @@
 
   async function refreshProfiles() {
     const data = await api("/api/profiles");
-    const current = profileSelect.value || "default";
+    const current = profileSelect.value;
     profileSelect.innerHTML = "";
     (data.profiles || []).forEach((p) => {
       const opt = document.createElement("option");
@@ -174,7 +394,7 @@
       opt.textContent = p.has_session ? `${p.name} ●` : p.name;
       profileSelect.appendChild(opt);
     });
-    if ([...profileSelect.options].some((o) => o.value === current)) {
+    if (current && [...profileSelect.options].some((o) => o.value === current)) {
       profileSelect.value = current;
     } else if (profileSelect.options.length) {
       profileSelect.selectedIndex = 0;
@@ -193,7 +413,10 @@
     bar.hidden = false;
     bar.innerHTML = items
       .slice(0, 6)
-      .map((n) => `<div class="notify-item">${escapeHtml(n)}</div>`)
+      .map(
+        (n) =>
+          `<div class="notify-item">${escapeHtml(truncateMsg(n, 200))}</div>`
+      )
       .join("");
   }
 
@@ -207,7 +430,10 @@
     }
     const ev = alert.event || "?";
     el.hidden = false;
-    el.textContent = t("alert.last", { event: ev, message: alert.message });
+    el.textContent = t("alert.last", {
+      event: ev,
+      message: truncateMsg(alert.message, 160),
+    });
   }
 
   function applyWorkspace(ws) {
@@ -217,26 +443,34 @@
     } catch (_) {}
     const sw = $("workspaceSwitch");
     if (sw) sw.dataset.workspace = workspace;
+    const controls = $("controlsPanel");
+    if (controls) controls.dataset.workspace = workspace;
+    const shell = document.querySelector(".shell");
+    if (shell) shell.dataset.workspace = workspace;
+    document.documentElement.dataset.workspace = workspace;
+
     document.querySelectorAll("[data-workspace-set]").forEach((btn) => {
       btn.setAttribute(
         "aria-pressed",
         btn.getAttribute("data-workspace-set") === workspace ? "true" : "false"
       );
     });
+
     const isLi = workspace === "linkedin";
-    if ($("hhActions")) $("hhActions").hidden = isLi;
-    if ($("liActions")) $("liActions").hidden = !isLi;
-    if ($("liTabs")) $("liTabs").hidden = !isLi;
-    if ($("hhPanels")) $("hhPanels").hidden = isLi;
-    if ($("liPanels")) $("liPanels").hidden = !isLi;
-    if ($("statsGrid")) $("statsGrid").hidden = isLi;
-    if ($("liStatsGrid")) $("liStatsGrid").hidden = !isLi;
-    if ($("linkedinRisk")) $("linkedinRisk").hidden = !isLi;
-    if ($("criteria-bar") || document.querySelector(".criteria-bar")) {
-      const bar = document.querySelector(".criteria-bar");
-      if (bar) bar.hidden = isLi;
-    }
+    document.querySelectorAll("[data-workspace-panel]").forEach((el) => {
+      const pane = el.getAttribute("data-workspace-panel");
+      if (!pane || pane === "shared") {
+        el.hidden = false;
+        return;
+      }
+      el.hidden = pane !== workspace;
+    });
+
+    // Nested panes: keep LI tab visibility correct after parent show.
+    if ($("hhWorkspacePane")) $("hhWorkspacePane").hidden = isLi;
+    if ($("liWorkspacePane")) $("liWorkspacePane").hidden = !isLi;
     applyLiTab(liTab);
+    syncActionLabels(lastStatusCode, lastStatusMessage, lastBusy);
   }
 
   function applyLiTab(tab) {
@@ -271,12 +505,13 @@
     const st = await api(`/api/status?profile=${encodeURIComponent(profile())}`);
     const status = st.status || "idle";
     lastStatusCode = status;
+    lastStatusMessage = st.message || "";
+    lastBusy = !!st.busy;
     lastHasSession = !!st.has_session;
     lastHasLiSession = !!st.has_linkedin_session;
     statusPill.dataset.status = status;
     statusLabel.textContent = statusDisplay(status);
-    statusMessage.textContent = st.message || "";
-    setBusy(!!st.busy);
+    setStatusMessage(st.message || "");
 
     const s = st.stats || {};
     $("stHigh").textContent = s.high ?? 0;
@@ -304,49 +539,19 @@
 
     if (st.notifications) showNotifications(st.notifications);
     showLastAlert(st.last_alert);
+    updateSessionBanner(st);
 
-    const sched = st.report_schedule;
-    const hint = $("reportScheduleHint");
-    if (hint && sched) {
-      if (sched.enabled) {
-        const when = sched.next_run_iso
-          ? sched.next_run_iso
-          : `${String(sched.hour).padStart(2, "0")}:${String(sched.minute).padStart(2, "0")} ${sched.timezone || ""}`;
-        const last = sched.last_run_at
-          ? new Date(sched.last_run_at * 1000).toLocaleString()
-          : (sched.last_file && sched.last_file.created_at
-              ? new Date(sched.last_file.created_at * 1000).toLocaleString()
-              : "—");
-        hint.textContent = t("report.schedule.hint", { when, last });
-      } else {
-        hint.textContent = t("report.schedule.off");
+    if (st.remote_browser) {
+      remoteRunning = !!st.remote_browser.running;
+      if (typeof st.remote_browser.enabled === "boolean") {
+        remoteEnabled = !!st.remote_browser.enabled;
+        const btn = $("btnRemoteBrowser");
+        if (btn) btn.hidden = !remoteEnabled;
       }
+    } else {
+      remoteRunning = false;
     }
-
-    const parseSched = st.parse_schedule;
-    const parseHint = $("parseScheduleHint");
-    if (parseHint && parseSched) {
-      if (parseSched.enabled) {
-        const when = parseSched.next_run_iso
-          ? parseSched.next_run_iso
-          : (parseSched.times_display || "—");
-        const last = parseSched.last_run_at
-          ? new Date(parseSched.last_run_at * 1000).toLocaleString()
-          : "—";
-        parseHint.textContent = t("parse.schedule.hint", {
-          times: parseSched.times_display || "12:00,00:00",
-          tz: parseSched.timezone || "Europe/Minsk",
-          when,
-          last,
-        });
-      } else {
-        parseHint.textContent = t("parse.schedule.off");
-      }
-    }
-
-    if (st.remote_browser && typeof st.remote_browser.enabled === "boolean") {
-      applyRemoteUiFlag(st.remote_browser.enabled);
-    }
+    syncActionLabels(status, st.message, st.busy);
   }
 
   function explainButtonHtml(vacancyId) {
@@ -403,7 +608,7 @@
       li.innerHTML =
         `<span class="t">${escapeHtml(l.when || "")}</span> ` +
         `<span class="ev">${escapeHtml(l.event || "")}</span> ` +
-        highlightLogMessage(l.message || "");
+        highlightLogMessage(truncateMsg(l.message || "", 200));
       list.appendChild(li);
     });
   }
@@ -420,7 +625,7 @@
         `/api/vacancies/explain?profile=${encodeURIComponent(profile())}&vacancy_id=${vacancyId}`
       );
       if (data.error) {
-        $("explainText").textContent = data.error;
+        $("explainText").textContent = truncateMsg(data.error, 200);
         return;
       }
       $("explainMeta").textContent =
@@ -449,7 +654,7 @@
         all.appendChild(li);
       });
     } catch (e) {
-      $("explainText").textContent = String(e.message || e);
+      $("explainText").textContent = truncateMsg(String(e.message || e), 200);
     }
   }
 
@@ -467,6 +672,13 @@
     if (e.target === explainModal) explainModal.hidden = true;
   });
 
+  function setLiPanelEmpty(emptyId, tableId, isEmpty) {
+    const empty = $(emptyId);
+    const table = $(tableId);
+    if (empty) empty.hidden = !isEmpty;
+    if (table) table.hidden = !!isEmpty;
+  }
+
   async function refreshLiContacts() {
     const data = await api(
       `/api/linkedin/contacts?profile=${encodeURIComponent(profile())}&limit=80`
@@ -474,7 +686,8 @@
     const body = $("liContactBody");
     if (!body) return;
     body.innerHTML = "";
-    (data.contacts || []).forEach((c) => {
+    const contacts = data.contacts || [];
+    contacts.forEach((c) => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${escapeHtml(c.status || "")}</td>
@@ -482,6 +695,7 @@
         <td>${escapeHtml(c.query || "")}</td>`;
       body.appendChild(tr);
     });
+    setLiPanelEmpty("liContactEmpty", "liContactTable", contacts.length === 0);
   }
 
   async function refreshLiVacancies() {
@@ -491,7 +705,8 @@
     const body = $("liVacBody");
     if (!body) return;
     body.innerHTML = "";
-    (data.vacancies || []).forEach((v) => {
+    const vacancies = data.vacancies || [];
+    vacancies.forEach((v) => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td><a href="${escapeHtml(v.url)}" target="_blank" rel="noopener">${escapeHtml(v.title || v.url)}</a></td>
@@ -499,6 +714,7 @@
         <td>${escapeHtml(v.query || "")}</td>`;
       body.appendChild(tr);
     });
+    setLiPanelEmpty("liVacEmpty", "liVacTable", vacancies.length === 0);
   }
 
   async function refreshLiLogs() {
@@ -514,7 +730,7 @@
       li.innerHTML =
         `<span class="t">${escapeHtml(l.when || "")}</span> ` +
         `<span class="ev">${escapeHtml(l.event || "")}</span> ` +
-        highlightLogMessage(l.message || "");
+        highlightLogMessage(truncateMsg(l.message || "", 200));
       list.appendChild(li);
     });
   }
@@ -532,21 +748,28 @@
         await Promise.all([refreshVacancies(), refreshLogs()]);
       }
     } catch (e) {
-      statusMessage.textContent = String(e.message || e);
+      setStatusMessage(String(e.message || e));
     }
   }
 
   async function withAction(fn) {
     try {
       const r = await fn();
-      if (r && r.error) statusMessage.textContent = r.error;
-      else if (r && r.message) statusMessage.textContent = r.message;
+      if (r && r.error) setStatusMessage(r.error);
+      else if (r && r.message) setStatusMessage(r.message);
       await refreshAll();
       return r;
     } catch (e) {
-      statusMessage.textContent = String(e.message || e);
+      setStatusMessage(String(e.message || e));
       return null;
     }
+  }
+
+  async function requestStop() {
+    // Always hit /api/stop (job + remote on server). Then clear stale viewer UI
+    // so a leftover modal/WS cannot swallow the next Stop click.
+    await withAction(() => post("/api/stop"));
+    closeRemoteModalUi();
   }
 
   function wsUrl() {
@@ -554,16 +777,92 @@
     return `${proto}://${location.host}/api/remote-browser/ws?profile=${encodeURIComponent(profile())}`;
   }
 
+  function syncRemoteCanvasSize() {
+    const w = Math.max(1, viewport.width | 0);
+    const h = Math.max(1, viewport.height | 0);
+    if (remoteCanvas.width !== w) remoteCanvas.width = w;
+    if (remoteCanvas.height !== h) remoteCanvas.height = h;
+    remoteCanvas.style.aspectRatio = `${w} / ${h}`;
+  }
+
+  // Map pointer → remote CDP coords. Site popups (LinkedIn cards, surveys) are
+  // just pixels in the JPEG screencast — no special CSS; only this transform matters.
+  // Canvas element is sized with contain (max-width/max-height), so getBoundingClientRect()
+  // matches the visible frame under modal scale and fullscreen.
   function scalePoint(e) {
     const rect = remoteCanvas.getBoundingClientRect();
-    const clientX = e.clientX ?? (e.touches && e.touches[0] && e.touches[0].clientX) ?? 0;
-    const clientY = e.clientY ?? (e.touches && e.touches[0] && e.touches[0].clientY) ?? 0;
+    if (!rect.width || !rect.height) return { x: 0, y: 0 };
+    const touch =
+      (e.touches && e.touches[0]) ||
+      (e.changedTouches && e.changedTouches[0]) ||
+      null;
+    const clientX = e.clientX ?? (touch && touch.clientX) ?? 0;
+    const clientY = e.clientY ?? (touch && touch.clientY) ?? 0;
     const x = ((clientX - rect.left) / rect.width) * viewport.width;
     const y = ((clientY - rect.top) / rect.height) * viewport.height;
     return {
       x: Math.max(0, Math.min(viewport.width, x)),
       y: Math.max(0, Math.min(viewport.height, y)),
     };
+  }
+
+  function isRemoteFullscreen() {
+    return !!(
+      remoteFsDesired ||
+      (remoteModal && remoteModal.classList.contains("is-fullscreen")) ||
+      (document.fullscreenElement &&
+        remotePanel &&
+        (document.fullscreenElement === remotePanel ||
+          remotePanel.contains(document.fullscreenElement)))
+    );
+  }
+
+  function syncRemoteFullscreenUi() {
+    const on = isRemoteFullscreen();
+    if (remoteModal) remoteModal.classList.toggle("is-fullscreen", on);
+    if (!btnRemoteFullscreen) return;
+    const key = on ? "remote.fullscreen_exit" : "remote.fullscreen";
+    const label = t(key);
+    btnRemoteFullscreen.setAttribute("data-i18n", key);
+    btnRemoteFullscreen.setAttribute("title", label);
+    btnRemoteFullscreen.setAttribute("aria-label", label);
+    const labelEl = btnRemoteFullscreen.querySelector(".btn-label");
+    if (labelEl) {
+      labelEl.setAttribute("data-i18n", key);
+      labelEl.textContent = label;
+    }
+    const useEl = $("remoteFsIconUse");
+    if (useEl) useEl.setAttribute("href", on ? "#i-compress" : "#i-expand");
+  }
+
+  async function enterRemoteFullscreen() {
+    remoteFsDesired = true;
+    if (remoteModal) remoteModal.classList.add("is-fullscreen");
+    syncRemoteFullscreenUi();
+    if (remotePanel && remotePanel.requestFullscreen && !document.fullscreenElement) {
+      try {
+        await remotePanel.requestFullscreen();
+      } catch (_) {
+        /* CSS is-fullscreen already expands the panel */
+      }
+    }
+    remoteCanvas.focus();
+  }
+
+  async function exitRemoteFullscreen() {
+    remoteFsDesired = false;
+    if (remoteModal) remoteModal.classList.remove("is-fullscreen");
+    if (document.fullscreenElement) {
+      try {
+        await document.exitFullscreen();
+      } catch (_) {}
+    }
+    syncRemoteFullscreenUi();
+  }
+
+  async function toggleRemoteFullscreen() {
+    if (isRemoteFullscreen()) await exitRemoteFullscreen();
+    else await enterRemoteFullscreen();
   }
 
   function send(msg) {
@@ -598,15 +897,25 @@
     remoteOverlay.hidden = false;
     setRemoteOverlay("remote.connecting", true);
     remoteUrl.textContent = "";
+    remoteFsDesired = false;
+    syncRemoteFullscreenUi();
+    syncActionLabels(lastStatusCode, lastStatusMessage, lastBusy);
     remoteCanvas.focus();
   }
 
   function closeRemoteModalUi() {
+    remoteFsDesired = false;
+    if (remoteModal) remoteModal.classList.remove("is-fullscreen");
+    if (document.fullscreenElement) {
+      try { document.exitFullscreen(); } catch (_) {}
+    }
+    syncRemoteFullscreenUi();
     remoteModal.hidden = true;
     if (ws) {
       try { ws.close(); } catch (_) {}
       ws = null;
     }
+    syncActionLabels(lastStatusCode, lastStatusMessage, lastBusy);
   }
 
   async function startRemoteViewer(wsName) {
@@ -617,13 +926,17 @@
         workspace: wsName || workspace || "hh",
       });
       if (started && started.error) {
-        setRemoteOverlay(started.error, false);
-        statusMessage.textContent = started.error;
+        setRemoteOverlay(truncateMsg(started.error, 200), false);
+        setStatusMessage(started.error);
         return;
       }
-      if (started && started.viewport) viewport = started.viewport;
+      if (started && started.viewport) {
+        viewport = started.viewport;
+        syncRemoteCanvasSize();
+      }
     } catch (e) {
-      setRemoteOverlay(String(e.message || e), false);
+      setRemoteOverlay(truncateMsg(String(e.message || e), 200), false);
+      setStatusMessage(String(e.message || e));
       return;
     }
 
@@ -640,7 +953,10 @@
       let msg;
       try { msg = JSON.parse(ev.data); } catch (_) { return; }
       if (msg.type === "hello") {
-        if (msg.viewport) viewport = msg.viewport;
+        if (msg.viewport) {
+          viewport = msg.viewport;
+          syncRemoteCanvasSize();
+        }
         if (msg.url) remoteUrl.textContent = msg.url;
         return;
       }
@@ -722,6 +1038,12 @@
     send({ type: "mouse", event: "up", button: "left", ...scalePoint(e) });
   }, { passive: false });
   remoteCanvas.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && isRemoteFullscreen()) {
+      e.preventDefault();
+      e.stopPropagation();
+      exitRemoteFullscreen();
+      return;
+    }
     e.preventDefault();
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       send({ type: "key", event: "type", text: e.key });
@@ -777,13 +1099,7 @@
       withAction(() => post("/api/linkedin/vacancies/search"));
   }
   if ($("btnLiStop")) {
-    $("btnLiStop").onclick = async () => {
-      if (remoteEnabled && (!remoteModal.hidden || (ws && ws.readyState === WebSocket.OPEN))) {
-        await closeRemoteViewer(true);
-        return;
-      }
-      await withAction(() => post("/api/stop"));
-    };
+    $("btnLiStop").onclick = () => requestStop();
   }
   if ($("btnLiCriteria")) {
     $("btnLiCriteria").onclick = async () => {
@@ -793,7 +1109,7 @@
         if (data.notifications) showNotifications(data.notifications);
         $("liLaunchMessage").textContent = "";
       } catch (e) {
-        $("liLaunchMessage").textContent = String(e.message || e);
+        $("liLaunchMessage").textContent = truncateMsg(String(e.message || e), 200);
       }
       $("liLaunchModal").hidden = false;
     };
@@ -812,14 +1128,20 @@
           body: JSON.stringify({ launch }),
         });
         if (!r.ok) {
-          $("liLaunchMessage").textContent = r.error || t("launch.err.save");
+          $("liLaunchMessage").textContent = truncateMsg(
+            r.error || t("launch.err.save"),
+            200
+          );
           return;
         }
-        $("liLaunchMessage").textContent = t("launch.saved", { path: r.path });
+        $("liLaunchMessage").textContent = truncateMsg(
+          t("launch.saved", { path: r.path }),
+          200
+        );
         $("liLaunchModal").hidden = true;
         await refreshAll();
       } catch (e) {
-        $("liLaunchMessage").textContent = String(e.message || e);
+        $("liLaunchMessage").textContent = truncateMsg(String(e.message || e), 200);
       }
     };
   }
@@ -831,27 +1153,33 @@
     );
   $("btnRemoteSave").onclick = () => withAction(() => post("/api/remote-browser/save"));
   $("btnRemoteClose").onclick = () => closeRemoteViewer(true);
-  $("btnSearch").onclick = () => withAction(() => post("/api/search"));
-  $("btnApply").onclick = () => withAction(() => post("/api/apply"));
-  $("btnDownloadReport").onclick = () => {
-    const kind = ($("reportKind") && $("reportKind").value) || "work";
-    const url =
-      `/api/reports/${encodeURIComponent(kind)}.pdf` +
-      `?profile=${encodeURIComponent(profile())}`;
-    window.location.href = url;
-  };
-  $("btnStop").onclick = async () => {
-    if (remoteEnabled && (!remoteModal.hidden || (ws && ws.readyState === WebSocket.OPEN))) {
-      await closeRemoteViewer(true);
+  if (btnRemoteFullscreen) {
+    btnRemoteFullscreen.onclick = () => toggleRemoteFullscreen();
+  }
+  document.addEventListener("fullscreenchange", () => {
+    if (!remoteModal || remoteModal.hidden) return;
+    if (document.fullscreenElement === remotePanel) {
+      remoteFsDesired = true;
+      syncRemoteFullscreenUi();
       return;
     }
-    await withAction(() => post("/api/stop"));
-  };
+    if (!document.fullscreenElement) {
+      // Browser Esc / gesture left native FS — collapse CSS expand too.
+      remoteFsDesired = false;
+      remoteModal.classList.remove("is-fullscreen");
+      syncRemoteFullscreenUi();
+    }
+  });
+  window.addEventListener("aa:lang", () => syncRemoteFullscreenUi());
+  $("btnSearch").onclick = () => withAction(() => post("/api/search"));
+  $("btnApply").onclick = () => withAction(() => post("/api/apply"));
+  initReportMenu();
+  $("btnStop").onclick = () => requestStop();
   profileSelect.onchange = () => refreshAll();
 
   function setLaunchMessage(text, ok) {
     const el = $("launchMessage");
-    el.textContent = text || "";
+    el.textContent = text ? truncateMsg(text, 200) : "";
     el.classList.toggle("ok", !!ok);
     el.classList.toggle("err", !ok && !!text);
   }
@@ -907,7 +1235,13 @@
     if (e.target === launchModal) closeLaunchModal();
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && launchModal && !launchModal.hidden) {
+    if (e.key !== "Escape") return;
+    if (remoteModal && !remoteModal.hidden && isRemoteFullscreen()) {
+      e.preventDefault();
+      exitRemoteFullscreen();
+      return;
+    }
+    if (launchModal && !launchModal.hidden) {
       closeLaunchModal();
     }
   });
@@ -943,11 +1277,7 @@
       updateLaunchMeta(r.launch);
       setLaunchMessage(t("launch.saved", { path: r.path }), true);
       const cfg = await api("/api/config");
-      $("cfgHint").textContent =
-        `${cfg.app_name} · ${cfg.base_url}` +
-        ` · area=${cfg.search_area}` +
-        ` · remote/hybrid=${cfg.require_remote_or_hybrid}` +
-        ` · launch=on`;
+      $("cfgHint").textContent = `${cfg.app_name} · ${cfg.base_url || ""}`.trim();
       closeLaunchModal();
     } catch (e) {
       setLaunchMessage(String(e.message || e), false);
@@ -967,14 +1297,59 @@
     await refreshAll();
   };
 
+  $("btnRenameProfile").onclick = async () => {
+    const current = profile();
+    const next = window.prompt(t("profile.rename.prompt"), current);
+    if (next == null) return;
+    const name = String(next).trim();
+    if (!name || name === current) return;
+    try {
+      const r = await api(`/api/profiles/${encodeURIComponent(current)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ new_name: name }),
+      });
+      await refreshProfiles();
+      profileSelect.value = r.name || name;
+      await refreshAll();
+    } catch (e) {
+      setStatusMessage(String(e.message || e));
+    }
+  };
+
+  $("btnDeleteProfile").onclick = async () => {
+    const current = profile();
+    if (!window.confirm(t("profile.delete.confirm", { name: current }))) return;
+    try {
+      const r = await api(`/api/profiles/${encodeURIComponent(current)}`, {
+        method: "DELETE",
+      });
+      await refreshProfiles();
+      if (r.selected) profileSelect.value = r.selected;
+      await refreshAll();
+    } catch (e) {
+      setStatusMessage(String(e.message || e));
+    }
+  };
+
   window.addEventListener("aa:lang", () => {
-    syncLoginLabel();
+    syncActionLabels(lastStatusCode, lastStatusMessage, lastBusy);
     statusLabel.textContent = statusDisplay(lastStatusCode);
     $("stSession").textContent = lastHasSession
       ? t("stats.session_ok")
       : t("stats.session_no");
+    if ($("stLiSession")) {
+      $("stLiSession").textContent = lastHasLiSession
+        ? t("stats.session_ok")
+        : t("stats.session_no");
+    }
+    updateSessionBanner({
+      status: lastStatusCode,
+      message: lastStatusMessage,
+      has_session: lastHasSession,
+      has_linkedin_session: lastHasLiSession,
+    });
     if (!statusMessage.textContent.trim()) {
-      statusMessage.textContent = t("status.ready");
+      setStatusMessage(t("status.ready"));
     }
     if (launchLoaded) updateLaunchMeta(lastLaunch);
     if (remoteOverlayKey) {
@@ -988,20 +1363,14 @@
   initTheme();
   initWorkspace();
   if (window.AA_I18N) window.AA_I18N.initLang();
-  statusMessage.textContent = t("status.ready");
+  setStatusMessage(t("status.ready"));
 
   (async () => {
     try {
       const cfg = await api("/api/config");
       applyRemoteUiFlag(!!cfg.enable_remote_browser);
       if (cfg.notifications) showNotifications(cfg.notifications);
-      $("cfgHint").textContent =
-        `${cfg.app_name} · ${cfg.base_url}` +
-        ` · area=${cfg.search_area || "-"}` +
-        ` · remote/hybrid=${cfg.require_remote_or_hybrid}` +
-        ` · weights=config/weights.json` +
-        ` · remote_browser=${cfg.enable_remote_browser ? "on" : "off"}` +
-        ` · workspaces=hh+linkedin`;
+      $("cfgHint").textContent = `${cfg.app_name} · ${cfg.base_url || ""}`.trim();
       await refreshLaunch();
     } catch (_) {}
     await refreshProfiles();

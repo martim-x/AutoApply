@@ -7,7 +7,7 @@ import tempfile
 from collections.abc import Iterator
 from functools import lru_cache
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
@@ -153,7 +153,6 @@ def _styles() -> dict[str, ParagraphStyle]:
 
 def _header_footer(canvas, doc, payload: ReportPayload) -> None:
     canvas.saveState()
-    styles = _styles()
     page = canvas.getPageNumber()
     header = f"{payload.app_name} · {payload.title}"
     footer = f"{payload.app_name}  ·  {payload.generated_label}  ·  стр. {page}"
@@ -173,7 +172,7 @@ def _header_footer(canvas, doc, payload: ReportPayload) -> None:
 
 
 def _kv_block(block: dict, styles: dict) -> KeepTogether:
-    parts = [Paragraph(_esc(block.get("title") or ""), styles["block"])]
+    parts: list[Any] = [Paragraph(_esc(block.get("title") or ""), styles["block"])]
     rows = block.get("rows") or []
     data = [
         [
@@ -203,8 +202,8 @@ def _kv_block(block: dict, styles: dict) -> KeepTogether:
 
 
 def _bullets_block(block: dict, styles: dict) -> KeepTogether:
-    parts = [Paragraph(_esc(block.get("title") or ""), styles["block"])]
-    items = [
+    parts: list[Any] = [Paragraph(_esc(block.get("title") or ""), styles["block"])]
+    items: list[Any] = [
         ListItem(Paragraph(_esc(str(it)), styles["body"]), leftIndent=8)
         for it in (block.get("items") or ["—"])
     ]
@@ -230,10 +229,9 @@ def _table_block(block: dict, styles: dict) -> list:
         col_w = [width / n] * n
         # bias first narrow cols for cat/score
         if n >= 4:
-            col_w = [18 * mm, 16 * mm, 28 * mm] + [None] * (n - 3)
-            rest = width - sum(w for w in col_w if w)
-            for i in range(3, n):
-                col_w[i] = rest / (n - 3)
+            col_w = [18 * mm, 16 * mm, 28 * mm]
+            rest = width - sum(col_w)
+            col_w.extend([rest / (n - 3)] * (n - 3))
         t = Table(data, colWidths=col_w, repeatRows=1)
         t.setStyle(
             TableStyle(
@@ -271,7 +269,7 @@ def _log_block(block: dict, styles: dict) -> list:
     chunk_size = 10
     for i in range(0, max(len(items), 1), chunk_size):
         chunk = items[i : i + chunk_size] if items else []
-        paras = []
+        paras: list[Any] = []
         if i == 0:
             paras.append(title)
         for it in chunk:

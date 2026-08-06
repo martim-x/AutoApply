@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import threading
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from app.application.alerts import AlertService, get_alert_service
 from app.domain.enums import JobStatus

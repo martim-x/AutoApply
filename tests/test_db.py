@@ -9,9 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.domain.entities import Application, Vacancy  # noqa: E402
-from app.domain.enums import ApplyStatus, FitCategory, JobStatus  # noqa: E402
-from app.infrastructure.db.sqlite_uow import SqliteUnitOfWork  # noqa: E402
+from app.domain.entities import Application, Vacancy
+from app.domain.enums import ApplyStatus, FitCategory, JobStatus
+from app.infrastructure.db.sqlite_uow import SqliteUnitOfWork
 
 
 def test_profile_and_vacancy_priority(tmp_path: Path):
@@ -54,6 +54,58 @@ def test_profile_and_vacancy_priority(tmp_path: Path):
 
     q = db.vacancies.next_queued("p1")
     assert [v.title for v in q] == ["high", "med", "low"]
+
+
+def test_rename_and_delete_profile(tmp_path: Path):
+    db = SqliteUnitOfWork(tmp_path / "t_rename.sqlite")
+    # Fresh DB bootstraps default only because empty
+    assert {p.name for p in db.profiles.list_profiles()} == {"default"}
+
+    db.profiles.ensure_profile("alpha")
+    db.vacancies.upsert(
+        Vacancy(
+            profile="alpha",
+            url="https://rabota.by/vacancy/42",
+            title="dev",
+            category=FitCategory.HIGH,
+            score=90,
+            filter_status="ok",
+            apply_status=ApplyStatus.QUEUED,
+        )
+    )
+    db.journal.log("alpha", "note", "hello")
+    db.jobs.set_status("alpha", JobStatus.IDLE, "ok")
+
+    renamed = db.profiles.rename_profile("alpha", "beta")
+    assert renamed.name == "beta"
+    assert db.vacancies.list_for_profile("beta")
+    assert not db.vacancies.list_for_profile("alpha")
+    assert db.journal.recent("beta", limit=5)
+
+    # Delete bootstrap default while another profile exists → default stays gone
+    selected = db.profiles.delete_profile("default")
+    assert selected == "beta"
+    names = {p.name for p in db.profiles.list_profiles()}
+    assert names == {"beta"}
+
+    # Re-open UoW must NOT resurrect default when profiles exist
+    db2 = SqliteUnitOfWork(tmp_path / "t_rename.sqlite")
+    assert {p.name for p in db2.profiles.list_profiles()} == {"beta"}
+
+    # Deleting the last profile recreates empty default
+    only = db2.profiles.delete_profile("beta")
+    assert only == "default"
+    assert {p.name for p in db2.profiles.list_profiles()} == {"default"}
+
+
+def test_rename_conflict_with_existing(tmp_path: Path):
+    db = SqliteUnitOfWork(tmp_path / "t_conflict.sqlite")
+    db.profiles.ensure_profile("alpha")
+    try:
+        db.profiles.rename_profile("alpha", "default")
+        assert False, "expected conflict with default"
+    except ValueError:
+        pass
 
 
 def test_journal_and_status(tmp_path: Path):

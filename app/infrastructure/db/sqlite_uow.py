@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from app.domain.entities import (
     Application,
@@ -157,7 +158,9 @@ class SqliteUnitOfWork:
                     ON report_files(created_at);
                 """
             )
-        self.profiles.ensure_profile("default")
+        # Bootstrap only when the DB has no profiles at all.
+        if not self.profiles.list_profiles():
+            self.profiles.ensure_profile("default")
 
     def stats(self, profile: str) -> dict[str, Any]:
         return self.applications.stats(profile)
@@ -173,7 +176,7 @@ class _ProfileRepo:
             return [_row_profile(r) for r in rows]
 
     def ensure_profile(self, name: str) -> Profile:
-        name = (name or "default").strip() or "default"
+        name = _clean_profile_name(name, fallback="default")
         with self._uow._conn() as c:
             c.execute(
                 "INSERT OR IGNORE INTO profiles(name, created_at) VALUES (?, ?)",
@@ -186,6 +189,96 @@ class _ProfileRepo:
             )
             row = c.execute("SELECT * FROM profiles WHERE name=?", (name,)).fetchone()
             return _row_profile(row)
+
+    def resolve_profile(self, name: str | None = None) -> str:
+        """Pick an existing profile; create `default` only if the table is empty."""
+        wanted = (name or "").strip()
+        existing = self.list_profiles()
+        names = [p.name for p in existing]
+        if not names:
+            return self.ensure_profile(wanted or "default").name
+        if wanted and wanted in names:
+            return wanted
+        return names[0]
+
+    def rename_profile(self, old_name: str, new_name: str) -> Profile:
+        old_name = _clean_profile_name(old_name)
+        new_name = _clean_profile_name(new_name)
+        with self._uow._conn() as c:
+            old = c.execute(
+                "SELECT * FROM profiles WHERE name=?", (old_name,)
+            ).fetchone()
+            if not old:
+                raise ValueError(f"profile not found: {old_name}")
+            if old_name == new_name:
+                return _row_profile(old)
+            exists = c.execute(
+                "SELECT 1 FROM profiles WHERE name=?", (new_name,)
+            ).fetchone()
+            if exists:
+                raise ValueError(f"profile already exists: {new_name}")
+            for table in (
+                "vacancies",
+                "applications",
+                "journal",
+                "job_state",
+                "linkedin_contacts",
+                "linkedin_vacancies",
+                "report_files",
+            ):
+                c.execute(
+                    f"UPDATE {table} SET profile=? WHERE profile=?",
+                    (new_name, old_name),
+                )
+            c.execute(
+                "UPDATE profiles SET name=? WHERE name=?",
+                (new_name, old_name),
+            )
+            row = c.execute(
+                "SELECT * FROM profiles WHERE name=?", (new_name,)
+            ).fetchone()
+            return _row_profile(row)
+
+    def delete_profile(self, name: str) -> str:
+        """Delete profile and related rows.
+
+        Recreate empty `default` only when no profiles remain.
+        If others exist, do not recreate `default` — return the first remaining name.
+        """
+        name = _clean_profile_name(name)
+        with self._uow._conn() as c:
+            row = c.execute(
+                "SELECT name FROM profiles WHERE name=?", (name,)
+            ).fetchone()
+            if not row:
+                raise ValueError(f"profile not found: {name}")
+            for table in (
+                "vacancies",
+                "applications",
+                "journal",
+                "job_state",
+                "linkedin_contacts",
+                "linkedin_vacancies",
+                "report_files",
+            ):
+                c.execute(f"DELETE FROM {table} WHERE profile=?", (name,))
+            c.execute("DELETE FROM profiles WHERE name=?", (name,))
+            remaining = c.execute(
+                "SELECT name FROM profiles ORDER BY name"
+            ).fetchall()
+            if not remaining:
+                now = time.time()
+                c.execute(
+                    "INSERT INTO profiles(name, created_at) VALUES (?, ?)",
+                    ("default", now),
+                )
+                c.execute(
+                    "INSERT INTO job_state(profile, status, message, stats_json, updated_at)"
+                    " VALUES (?, 'idle', '', '{}', ?)",
+                    ("default", now),
+                )
+                return "default"
+            return remaining[0]["name"]
 
     def save_session(self, profile: str, storage_path: Path) -> None:
         with self._uow._conn() as c:
@@ -739,7 +832,7 @@ class _ReportFileRepo:
                 """,
                 (profile, kind, path, time.time(), int(scheduled)),
             )
-            return int(cur.lastrowid)
+            return int(cur.lastrowid or 0)
 
     def list_recent(self, limit: int = 30) -> list[dict[str, Any]]:
         with self._uow._conn() as c:
@@ -810,6 +903,19 @@ def _row_li_vacancy(r: sqlite3.Row) -> LinkedInVacancyLink:
         created_at=r["created_at"],
         updated_at=r["updated_at"],
     )
+
+
+def _clean_profile_name(name: str, *, fallback: str | None = None) -> str:
+    cleaned = (name or "").strip()
+    if not cleaned:
+        if fallback is not None:
+            return fallback
+        raise ValueError("empty profile name")
+    if len(cleaned) > 64:
+        raise ValueError("profile name too long")
+    if cleaned in (".", "..") or any(ch in cleaned for ch in ("/", "\\", "\0")):
+        raise ValueError("invalid profile name")
+    return cleaned
 
 
 def _row_profile(r: sqlite3.Row) -> Profile:

@@ -91,10 +91,24 @@ class AppService:
     # ── StopJob ───────────────────────────────────────────────
 
     def stop_job(self, profile: str = "default") -> dict[str, Any]:
+        """Stop running job and/or remote browser (both if present)."""
         profile = self._profile(profile)
+        out: dict[str, Any] = {"ok": True}
         if self.remote_browser.get(profile):
-            return self.remote_browser.stop(profile, save=True)
-        return self.runner.stop(profile)
+            out["remote"] = self.remote_browser.stop(profile, save=True)
+        job = self.runner.stop(profile)
+        remote_msg = (out.get("remote") or {}).get("message") or ""
+        job_msg = job.get("message") or ""
+        parts = [
+            m
+            for m in (remote_msg, job_msg)
+            if m and m != "nothing to stop"
+        ]
+        out["message"] = "; ".join(parts) if parts else (job_msg or remote_msg or "stopped")
+        if job.get("ok") is False:
+            out["ok"] = False
+            out["error"] = job.get("error")
+        return out
 
     # ── GetStats / status ─────────────────────────────────────
 
@@ -253,6 +267,63 @@ class AppService:
     def ensure_profile(self, name: str) -> dict[str, Any]:
         p = self.uow.profiles.ensure_profile(name)
         return {"name": p.name, "ok": True}
+
+    def rename_profile(self, old_name: str, new_name: str) -> dict[str, Any]:
+        old = (old_name or "").strip()
+        new = (new_name or "").strip()
+        if not old or not new:
+            return {"ok": False, "error": "empty profile name"}
+        if self.runner.is_busy(old) or self.remote_browser.get(old):
+            return {"ok": False, "error": "profile busy — stop job / close browser first"}
+        try:
+            p = self.uow.profiles.rename_profile(old, new)
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
+        if old != p.name:
+            self._move_session_files(old, p.name)
+            new_state = self.settings.state_path(p.name)
+            if new_state.exists():
+                self.uow.profiles.save_session(p.name, new_state)
+        return {"ok": True, "name": p.name, "old_name": old}
+
+    def delete_profile(self, name: str) -> dict[str, Any]:
+        profile = (name or "").strip()
+        if not profile:
+            return {"ok": False, "error": "empty profile name"}
+        if self.runner.is_busy(profile) or self.remote_browser.get(profile):
+            return {"ok": False, "error": "profile busy — stop job / close browser first"}
+        try:
+            selected = self.uow.profiles.delete_profile(profile)
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
+        self._unlink_session_files(profile)
+        return {"ok": True, "deleted": profile, "selected": selected}
+
+    def _move_session_files(self, old_name: str, new_name: str) -> None:
+        pairs = (
+            (self.settings.state_path(old_name), self.settings.state_path(new_name)),
+            (
+                self.settings.linkedin_state_path(old_name),
+                self.settings.linkedin_state_path(new_name),
+            ),
+        )
+        for src, dst in pairs:
+            if not src.exists():
+                continue
+            if src.resolve() == dst.resolve():
+                continue
+            if dst.exists():
+                src.unlink(missing_ok=True)
+                continue
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            src.rename(dst)
+
+    def _unlink_session_files(self, profile: str) -> None:
+        for path in (
+            self.settings.state_path(profile),
+            self.settings.linkedin_state_path(profile),
+        ):
+            path.unlink(missing_ok=True)
 
     def config_public(self) -> dict[str, Any]:
         from app.domain.launch_profile import (
@@ -510,7 +581,5 @@ class AppService:
             scheduled=scheduled,
         )
 
-    def _profile(self, profile: str) -> str:
-        name = (profile or "default").strip() or "default"
-        self.uow.profiles.ensure_profile(name)
-        return name
+    def _profile(self, profile: str | None = None) -> str:
+        return self.uow.profiles.resolve_profile(profile)

@@ -9,8 +9,8 @@ from typing import Any, Literal
 from app.domain.ports import UnitOfWork
 from app.infrastructure.settings import Settings
 
-ReportKind = Literal["work", "queue", "launch"]
-REPORT_KINDS: tuple[str, ...] = ("work", "queue", "launch")
+ReportKind = Literal["work", "queue", "launch", "linkedin"]
+REPORT_KINDS: tuple[str, ...] = ("work", "queue", "launch", "linkedin")
 
 
 @dataclass
@@ -49,8 +49,7 @@ def assemble_report(
     profile: str = "default",
 ) -> ReportPayload:
     kind = normalize_kind(kind)
-    profile = (profile or "default").strip() or "default"
-    uow.profiles.ensure_profile(profile)
+    profile = uow.profiles.resolve_profile(profile)
     now = time.time()
     app_name = settings.app_name or "AutoApply"
 
@@ -58,6 +57,8 @@ def assemble_report(
         return _work_report(uow, settings, profile, app_name, now)
     if kind == "queue":
         return _queue_report(uow, settings, profile, app_name, now)
+    if kind == "linkedin":
+        return _linkedin_report(uow, settings, profile, app_name, now)
     return _launch_report(uow, settings, profile, app_name, now)
 
 
@@ -349,6 +350,96 @@ def _launch_report(
     return ReportPayload(
         kind="launch",
         title="Профиль запуска и фильтры",
+        profile=profile,
+        app_name=app_name,
+        generated_at=now,
+        themes=themes,
+    )
+
+
+def _linkedin_report(
+    uow: UnitOfWork,
+    settings: Settings,
+    profile: str,
+    app_name: str,
+    now: float,
+) -> ReportPayload:
+    li_stats = uow.linkedin_contacts.stats(profile)
+    vac_stats = uow.linkedin_vacancies.stats(profile)
+    by_status = li_stats.get("by_status") or {}
+    contacts = uow.linkedin_contacts.list_for_profile(profile, limit=40)
+    vacancies = uow.linkedin_vacancies.list_for_profile(profile, limit=40)
+    job = uow.jobs.get_status(profile)
+
+    themes = [
+        ReportTheme(
+            title="LinkedIn — сводка",
+            blocks=[
+                {
+                    "type": "kv",
+                    "title": "Обзор",
+                    "rows": [
+                        ("Профиль", profile),
+                        ("Приложение", app_name),
+                        ("Статус джоба", _enum_val(job.status)),
+                        ("Контакты", str(li_stats.get("total", 0))),
+                        ("Вакансии LI", str(vac_stats.get("total", 0))),
+                    ],
+                },
+                {
+                    "type": "kv",
+                    "title": "Контакты по статусу",
+                    "rows": [
+                        (str(k), str(v)) for k, v in sorted(by_status.items())
+                    ]
+                    or [("—", "нет данных")],
+                },
+            ],
+        ),
+        ReportTheme(
+            title="Контакты",
+            blocks=[
+                {
+                    "type": "table",
+                    "title": "Последние контакты",
+                    "headers": ["Статус", "Имя", "Запрос", "URL"],
+                    "rows": [
+                        [
+                            _enum_val(c.status),
+                            (c.name or "")[:60],
+                            (c.query or "")[:40],
+                            (c.url or "")[:70],
+                        ]
+                        for c in contacts
+                    ]
+                    or [["—", "—", "—", "нет данных"]],
+                },
+            ],
+        ),
+        ReportTheme(
+            title="Вакансии LinkedIn",
+            blocks=[
+                {
+                    "type": "table",
+                    "title": "Собранные вакансии",
+                    "headers": ["Вакансия", "Компания", "Локация", "URL"],
+                    "rows": [
+                        [
+                            (v.title or "")[:70],
+                            (v.company or "")[:40],
+                            (v.location or "")[:40],
+                            (v.url or "")[:70],
+                        ]
+                        for v in vacancies
+                    ]
+                    or [["—", "—", "—", "нет данных"]],
+                },
+            ],
+        ),
+    ]
+    return ReportPayload(
+        kind="linkedin",
+        title="Отчёт LinkedIn",
         profile=profile,
         app_name=app_name,
         generated_at=now,

@@ -531,7 +531,7 @@ def salary_match_score(
     if salary_min_usd is None and salary_max_usd is None:
         return "salary_prefs_off", 0.0
     lo, hi = extract_salary_usd(f"{title}\n{description}")
-    if lo is None:
+    if lo is None or hi is None:
         return "salary_unknown", 0.0
     pref_lo = salary_min_usd if salary_min_usd is not None else 0
     pref_hi = salary_max_usd if salary_max_usd is not None else 10**9

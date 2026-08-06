@@ -9,8 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.domain.categorize import categorize_vacancy, priority_key  # noqa: E402
-from app.domain.enums import FitCategory  # noqa: E402
+from app.domain.categorize import categorize_vacancy, priority_key
+from app.domain.enums import FitCategory
 
 
 def test_high_python_remote_strong_stack():

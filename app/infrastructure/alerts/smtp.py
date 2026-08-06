@@ -36,7 +36,13 @@ class SmtpSender:
         msg["To"] = mail_to
         msg.set_content(body)
 
-        if use_tls:
+        # Port 465 → implicit SSL (e.g. smtp.yandex.ru); 587 → STARTTLS.
+        if port == 465:
+            with smtplib.SMTP_SSL(host, port, timeout=timeout) as smtp:
+                if user:
+                    smtp.login(user, password)
+                smtp.send_message(msg)
+        elif use_tls:
             with smtplib.SMTP(host, port, timeout=timeout) as smtp:
                 smtp.ehlo()
                 smtp.starttls()

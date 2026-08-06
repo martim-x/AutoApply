@@ -140,7 +140,7 @@ class ReportScheduler:
                 self.next_run_iso = None
                 try:
                     await asyncio.wait_for(self._stop.wait(), timeout=60.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
                 break
 
@@ -152,7 +152,7 @@ class ReportScheduler:
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=delay)
                 break
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
             if self._stop.is_set():
@@ -181,7 +181,7 @@ class ReportScheduler:
                 # avoid tight retry loop
                 try:
                     await asyncio.wait_for(self._stop.wait(), timeout=120.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass
 
 
@@ -238,7 +238,7 @@ class ParseScheduler:
                 self.next_run_iso = None
                 try:
                     await asyncio.wait_for(self._stop.wait(), timeout=60.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
                 break
 
@@ -254,7 +254,7 @@ class ParseScheduler:
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=delay)
                 break
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
             if self._stop.is_set():
@@ -286,7 +286,7 @@ class ParseScheduler:
                     pass
                 try:
                     await asyncio.wait_for(self._stop.wait(), timeout=120.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass
 
     async def _wait_idle(self, profile: str, *, timeout: float = 3600.0) -> bool:
@@ -300,13 +300,12 @@ class ParseScheduler:
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=2.0)
                 return False
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
         return False
 
     async def _fire(self, sched: dict[str, Any]) -> dict[str, Any]:
-        profile = (sched.get("profile") or "default").strip() or "default"
-        self.uow.profiles.ensure_profile(profile)
+        profile = self.uow.profiles.resolve_profile(sched.get("profile"))
         hh_path = self.settings.state_path(profile)
         li_path = self.settings.linkedin_state_path(profile)
         has_hh = hh_path.exists()

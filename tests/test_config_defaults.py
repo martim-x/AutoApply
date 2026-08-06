@@ -6,15 +6,15 @@ import json
 from pathlib import Path
 
 from app.domain.config_defaults import deep_merge_defaults
-from app.domain.linkedin_profile import (
-    LINKEDIN_LAUNCH_DEFAULTS,
-    load_linkedin_launch,
-    validate_linkedin_dict,
-)
 from app.domain.launch_profile import (
     HH_LAUNCH_DEFAULTS,
     load_launch_profile_with_notes,
     validate_launch_dict,
+)
+from app.domain.linkedin_profile import (
+    LINKEDIN_LAUNCH_DEFAULTS,
+    load_linkedin_launch,
+    validate_linkedin_dict,
 )
 from app.infrastructure.scheduler import next_run_at, resolve_tz
 from app.infrastructure.settings import Settings

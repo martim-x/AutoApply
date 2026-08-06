@@ -84,13 +84,12 @@ class PlaywrightBrowserGateway:
     def run_login(self, profile: str, stop_flag: Any) -> None:
         from playwright.sync_api import sync_playwright
 
-        s = self.settings
         uow = self.uow
         uow.jobs.set_status(
             profile, JobStatus.LOGGING_IN, f"Откройте браузер и войдите на {self._site_base()}"
         )
         uow.journal.log(profile, "login_start", "Старт логина")
-        setattr(stop_flag, "save_now", False)
+        stop_flag.save_now = False
 
         with sync_playwright() as p:
             browser, context, sp = self._launch(p, profile)

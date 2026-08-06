@@ -16,6 +16,7 @@
 | **[docs/user-guide.md](docs/user-guide.md)** | Как пользоваться UI (login → search → apply, Explain, тема) |
 | **[docs/architecture.md](docs/architecture.md)** | Техрешения: DDD, Playwright, scoring, remote browser |
 | **[docs/alerts.md](docs/alerts.md)** | SMTP-алерты (captcha/error) и durability прогона |
+| **[docs/fly-io.md](docs/fly-io.md)** | Fly.io деплой, volume, secrets, GitHub Actions CI/CD |
 | **[docs/priorities.md](docs/priorities.md)** | Legend → фильтры и дерево весов |
 
 ---
@@ -82,16 +83,18 @@ tests/
 
 ---
 
-## Docker / Railway
+## Docker / Railway / Fly.io
 
 ```bash
 cp -n .env.example .env
 docker compose up --build
 ```
 
-Образ ставит **Playwright Chromium** (`HEADLESS=true`, `ENABLE_REMOTE_BROWSER=true`). Данные — том `./data` (на Railway — volume на `/app/data`).
+Образ ставит **Playwright Chromium** (`HEADLESS=true`, `ENABLE_REMOTE_BROWSER=true`). Данные — том `./data` (на Fly/Railway — volume на `/app/data`).
 
-**Railway:** Deploy `Dockerfile` → Variables: `HEADLESS=true`, `ENABLE_REMOTE_BROWSER=true`, плюс `ADMIN_USER` / `ADMIN_PASSWORD` / `ADMIN_SECRET` → volume `/app/data` → логин через remote screencast в UI. Редактор `.env`: `/admin` (если `ADMIN_*` заданы; иначе 404). Подробнее — [docs/getting-started.md](docs/getting-started.md).
+**CI/CD:** push/PR в `main` → ruff + mypy + pytest; на push в `main` — деплой на Fly.io (`fly.toml`). Нужен GitHub secret `FLY_API_TOKEN` и `fly secrets set …` — см. **[docs/fly-io.md](docs/fly-io.md)**.
+
+**Railway:** Deploy `Dockerfile` → Variables: `HEADLESS=true`, `ENABLE_REMOTE_BROWSER=true`, плюс `ADMIN_USER` / `ADMIN_PASSWORD` / `ADMIN_SECRET` → volume `/app/data` → логин через remote screencast в UI. Редактор `.env`: `/admin` (если `ADMIN_*` заданы; иначе 404). Подробнее — [docs/docker-railway.md](docs/docker-railway.md), [docs/getting-started.md](docs/getting-started.md).
 
 ---
 

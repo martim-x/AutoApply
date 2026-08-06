@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from starlette.status import HTTP_303_SEE_OTHER, HTTP_404_NOT_FOUND
 
@@ -50,7 +50,7 @@ def create_admin_router() -> APIRouter:
         return RedirectResponse(url="/admin/login", status_code=HTTP_303_SEE_OTHER)
 
     @router.get("/admin", response_class=HTMLResponse)
-    def admin_index(request: Request) -> HTMLResponse:
+    def admin_index(request: Request) -> Response:
         denied = _require_enabled(request)
         if denied:
             return denied
@@ -59,7 +59,7 @@ def create_admin_router() -> APIRouter:
         return RedirectResponse(url="/admin/env", status_code=HTTP_303_SEE_OTHER)
 
     @router.get("/admin/login", response_class=HTMLResponse)
-    def admin_login_get(request: Request) -> HTMLResponse:
+    def admin_login_get(request: Request) -> Response:
         denied = _require_enabled(request)
         if denied:
             return denied
@@ -80,7 +80,7 @@ def create_admin_router() -> APIRouter:
         request: Request,
         name: str = Form(...),
         password: str = Form(...),
-    ) -> HTMLResponse:
+    ) -> Response:
         denied = _require_enabled(request)
         if denied:
             return denied
@@ -103,7 +103,7 @@ def create_admin_router() -> APIRouter:
         return RedirectResponse(url="/admin/env", status_code=HTTP_303_SEE_OTHER)
 
     @router.post("/admin/logout")
-    def admin_logout(request: Request) -> HTMLResponse:
+    def admin_logout(request: Request) -> Response:
         denied = _require_enabled(request)
         if denied:
             return denied
@@ -111,7 +111,7 @@ def create_admin_router() -> APIRouter:
         return _login_redirect()
 
     @router.get("/admin/env", response_class=HTMLResponse)
-    def admin_env_get(request: Request) -> HTMLResponse:
+    def admin_env_get(request: Request) -> Response:
         denied = _require_enabled(request)
         if denied:
             return denied
@@ -135,7 +135,7 @@ def create_admin_router() -> APIRouter:
     def admin_env_post(
         request: Request,
         content: str = Form(""),
-    ) -> HTMLResponse:
+    ) -> Response:
         denied = _require_enabled(request)
         if denied:
             return denied

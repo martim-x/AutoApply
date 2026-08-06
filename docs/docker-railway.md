@@ -2,6 +2,8 @@
 
 Chromium **внутри образа** Playwright — хостовый браузер не нужен.
 
+Актуальный CI/CD и прод-деплой — **Fly.io**: [fly-io.md](./fly-io.md) (`fly.toml` + GitHub Actions).
+
 ---
 
 ## Локально: Docker Compose

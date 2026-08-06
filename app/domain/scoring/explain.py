@@ -7,7 +7,6 @@ from typing import Any
 
 from app.domain.scoring.models import ScoreBreakdown
 
-
 _FALLBACK = {
     "HIGH": [
         "Сильный матч: {top_pos}. Итоговый вес {total:+.2f} → HIGH.",

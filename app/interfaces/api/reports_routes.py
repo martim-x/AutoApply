@@ -13,7 +13,7 @@ from starlette.background import BackgroundTask
 from app.application.reports import REPORT_KINDS, assemble_report, normalize_kind
 from app.infrastructure.reports.pdf import iter_file_chunks, render_report_pdf
 
-ReportKindLiteral = Literal["work", "queue", "launch"]
+ReportKindLiteral = Literal["work", "queue", "launch", "linkedin"]
 
 
 class GenerateReportBody(BaseModel):
