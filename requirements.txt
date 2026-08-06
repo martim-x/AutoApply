@@ -1,6 +1,10 @@
+# Generated from Poetry. Source of truth: pyproject.toml / poetry.lock
+# Prefer: poetry install
+# Refresh export (optional): poetry export -f requirements.txt --output requirements.txt --without-hashes
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
-playwright>=1.49.0
+playwright>=1.50.0
+greenlet>=3.5.0
 jinja2>=3.1.0
 python-multipart>=0.0.12
 pydantic>=2.9.0
