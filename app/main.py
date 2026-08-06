@@ -11,9 +11,14 @@ from fastapi.templating import Jinja2Templates
 
 from app.application.services import AppService
 from app.infrastructure.browser.job_runner import JobRunner
+from app.infrastructure.browser.launch import sanitize_playwright_browsers_path
+from app.infrastructure.browser.remote_session import RemoteBrowserManager
 from app.infrastructure.db import create_uow
 from app.infrastructure.settings import get_settings
 from app.interfaces.api import create_api_router
+
+# Avoid Cursor sandbox PLAYWRIGHT_BROWSERS_PATH (wrong arch / incomplete cache)
+sanitize_playwright_browsers_path()
 
 WEB_DIR = Path(__file__).resolve().parent / "interfaces" / "web"
 TEMPLATES = Jinja2Templates(directory=str(WEB_DIR / "templates"))
@@ -24,12 +29,14 @@ def create_app() -> FastAPI:
     settings.ensure_dirs()
     uow = create_uow(settings)
     runner = JobRunner(uow, settings)
-    service = AppService(uow, settings, runner)
+    remote_browser = RemoteBrowserManager(uow, settings)
+    service = AppService(uow, settings, runner, remote_browser)
 
     app = FastAPI(title=settings.app_name, version="0.1.0")
     app.state.settings = settings
     app.state.uow = uow
     app.state.runner = runner
+    app.state.remote_browser = remote_browser
     app.state.service = service
 
     app.include_router(create_api_router())

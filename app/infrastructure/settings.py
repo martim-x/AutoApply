@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     dry_run: bool = False
     headless: bool = False
 
+    # Remote interactive browser (CDP screencast → Web UI)
+    # For Railway/Docker: ENABLE_REMOTE_BROWSER=true and HEADLESS=true
+    enable_remote_browser: bool = False
+    remote_browser_jpeg_quality: int = 55
+    remote_browser_every_nth_frame: int = 1
+
     # Filters
     require_remote_or_hybrid: bool = True
     skip_gov: bool = True

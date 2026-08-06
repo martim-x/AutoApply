@@ -14,6 +14,7 @@ from app.domain.entities import Application, Vacancy
 from app.domain.enums import ApplyStatus, FitCategory, JobStatus
 from app.domain.filters import evaluate_vacancy
 from app.domain.ports import UnitOfWork
+from app.infrastructure.browser.launch import launch_chromium
 from app.infrastructure.browser.selectors import SEL
 from app.infrastructure.settings import Settings
 
@@ -175,7 +176,7 @@ class PlaywrightBrowserGateway:
                                 serp_url=serp,
                                 category=cat.category,
                                 score=cat.score,
-                                category_reason=cat.reason,
+                                category_reason=cat.explanation or cat.reason,
                                 filter_status="ok" if ok else decision.status,
                                 apply_status=ApplyStatus.QUEUED if ok else ApplyStatus.SKIPPED,
                             )
@@ -375,10 +376,7 @@ class PlaywrightBrowserGateway:
             "locale": "ru-RU",
             "viewport": {"width": 1280, "height": 900},
         }
-        try:
-            browser = p.chromium.launch(channel="chrome", headless=s.headless)
-        except Exception:
-            browser = p.chromium.launch(headless=s.headless)
+        browser = launch_chromium(p, headless=s.headless)
         if sp.exists():
             context = browser.new_context(storage_state=str(sp), **kwargs)
         else:

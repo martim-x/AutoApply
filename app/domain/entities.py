@@ -84,6 +84,9 @@ class CategoryResult:
     category: FitCategory
     score: int
     reason: str
+    explanation: str = ""
+    contributions: tuple = ()
+    total_weight: float = 0.0
 
 
 @dataclass

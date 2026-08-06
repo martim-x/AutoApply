@@ -1,4 +1,4 @@
-"""Fit categorization tests."""
+"""Fit categorization tests (weight-graph backed)."""
 
 from __future__ import annotations
 
@@ -16,16 +16,18 @@ from app.domain.enums import FitCategory  # noqa: E402
 def test_high_python_remote_strong_stack():
     r = categorize_vacancy(
         "Python-разработчик",
-        "Удалённо. Стек: Django, FastAPI, PostgreSQL, Docker.",
+        "Удалённо. Стек: Django, FastAPI, PostgreSQL, Docker, pytest. "
+        "Обязанности: разработка API. Требования: Middle.",
     )
     assert r.category == FitCategory.HIGH
-    assert r.score >= 88
+    assert r.score >= 60
+    assert r.explanation
 
 
 def test_medium_partial():
     r = categorize_vacancy(
         "Backend engineer",
-        "Python, remote-first team, REST APIs",
+        "Python, remote-first team, REST APIs, PostgreSQL",
     )
     assert r.category in (FitCategory.HIGH, FitCategory.MEDIUM)
 

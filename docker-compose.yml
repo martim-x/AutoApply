@@ -11,6 +11,7 @@ services:
       DATA_DIR: /app/data
       LETTER_PATH: /app/letter_universal.txt
       HEADLESS: ${HEADLESS:-true}
+      ENABLE_REMOTE_BROWSER: ${ENABLE_REMOTE_BROWSER:-true}
       HOST: 0.0.0.0
       PORT: 8080
     volumes:

@@ -1,0 +1,228 @@
+{
+  "version": 1,
+  "source": "Legend (Middle+ Python, FastAPI/Django, remote/hybrid, $2200–2800) + local vacancy samples",
+  "thresholds": {
+    "high": 0.62,
+    "medium": 0.38
+  },
+  "signals": {
+    "python_title_role": {
+      "weight": 0.92,
+      "patterns": [
+        "python[\\s-]*(developer|разработчик|dev|engineer|инженер)",
+        "разработчик\\s*\\(?\\s*python",
+        "developer\\s*\\(?\\s*python"
+      ],
+      "scope": "title",
+      "label": "Python-роль в заголовке"
+    },
+    "python_stack": {
+      "weight": 0.58,
+      "patterns": ["\\bpython\\b", "питон", "django", "fastapi", "flask"],
+      "scope": "any",
+      "label": "Python в тексте"
+    },
+    "fastapi_match": {
+      "weight": 0.72,
+      "patterns": ["\\bfastapi\\b"],
+      "scope": "any",
+      "label": "FastAPI (Legend / WhiteSnake)"
+    },
+    "django_match": {
+      "weight": 0.66,
+      "patterns": ["\\bdjango\\b", "\\bdrf\\b", "django\\s*rest"],
+      "scope": "any",
+      "label": "Django (Legend / NEMIKA)"
+    },
+    "postgres_match": {
+      "weight": 0.48,
+      "patterns": ["postgresql", "\\bpostgres\\b", "\\bpgbouncer\\b"],
+      "scope": "any",
+      "label": "PostgreSQL"
+    },
+    "queues_match": {
+      "weight": 0.55,
+      "patterns": ["rabbitmq", "\\bkafka\\b", "aio-pika", "\\bcelery\\b"],
+      "scope": "any",
+      "label": "Очереди / Celery (Legend)"
+    },
+    "redis_match": {
+      "weight": 0.38,
+      "patterns": ["\\bredis\\b"],
+      "scope": "any",
+      "label": "Redis"
+    },
+    "containers_match": {
+      "weight": 0.42,
+      "patterns": ["\\bdocker\\b", "kubernetes", "\\bk8s\\b", "\\bhelm\\b"],
+      "scope": "any",
+      "label": "Docker / K8s"
+    },
+    "pytest_match": {
+      "weight": 0.32,
+      "patterns": ["\\bpytest\\b", "testcontainers"],
+      "scope": "any",
+      "label": "pytest / качество"
+    },
+    "observability_match": {
+      "weight": 0.34,
+      "patterns": ["sentry", "prometheus", "grafana", "opentelemetry", "\\bloki\\b", "structlog"],
+      "scope": "any",
+      "label": "Observability"
+    },
+    "sqlalchemy_match": {
+      "weight": 0.36,
+      "patterns": ["sqlalchemy", "\\balembic\\b", "\\basyncpg\\b"],
+      "scope": "any",
+      "label": "SQLAlchemy / Alembic"
+    },
+    "remote_format": {
+      "weight": 0.70,
+      "patterns": [
+        "удал[её]нн\\w*",
+        "\\bremote\\b",
+        "дистанц\\w*",
+        "work\\s*from\\s*home",
+        "\\bwfh\\b",
+        "remote[\\s-]*first",
+        "полностью\\s*удал"
+      ],
+      "scope": "any",
+      "label": "Удалёнка"
+    },
+    "hybrid_format": {
+      "weight": 0.52,
+      "patterns": ["гибрид\\w*", "\\bhybrid\\b", "частично\\s*удал"],
+      "scope": "any",
+      "label": "Гибрид"
+    },
+    "salary_mentioned": {
+      "weight": 0.30,
+      "patterns": [
+        "\\d[\\d\\s]{2,5}\\s*(usd|\\$|бр|byn|руб)",
+        "зарплат\\w*",
+        "уровень дохода",
+        "вилк\\w*",
+        "от\\s*\\d"
+      ],
+      "scope": "any",
+      "label": "Зарплата указана"
+    },
+    "middle_level": {
+      "weight": 0.44,
+      "patterns": ["\\bmiddle\\+?\\b", "мидл", "middle[\\s/]+senior", "от\\s*3\\s*лет", "3[–-]6\\s*лет"],
+      "scope": "any",
+      "label": "Уровень Middle / Middle+"
+    },
+    "product_team": {
+      "weight": 0.28,
+      "patterns": ["продуктов\\w*", "product\\s*compan", "product\\s*team", "b2b", "saas"],
+      "scope": "any",
+      "label": "Продуктовая / B2B команда"
+    },
+    "microservices": {
+      "weight": 0.36,
+      "patterns": ["микросервис\\w*", "microservice", "database[\\s-]*per[\\s-]*service"],
+      "scope": "any",
+      "label": "Микросервисы"
+    },
+    "description_quality": {
+      "weight": 0.22,
+      "kind": "heuristic_description_quality",
+      "label": "Развёрнутое описание"
+    },
+    "gov_marker": {
+      "weight": -0.95,
+      "patterns": ["\\.gov\\.", "госструктур", "государственн\\w*\\s*(орган|учрежден)"],
+      "scope": "any",
+      "label": "Гос / .gov"
+    },
+    "office_only": {
+      "weight": -0.88,
+      "patterns": [
+        "только\\s*(в\\s*)?офис",
+        "офис\\s*только",
+        "обязательн\\w+\\s*присутств",
+        "полный\\s*день\\s*в\\s*офисе",
+        "office\\s*only",
+        "on[\\s-]*site\\s*only",
+        "строго\\s*офис",
+        "без\\s*удал[её]н",
+        "формат работы:\\s*на\\s*месте работодателя"
+      ],
+      "scope": "any",
+      "label": "Только офис"
+    },
+    "wrong_stack_php": {
+      "weight": -0.72,
+      "patterns": ["\\bphp\\b", "битрикс", "\\bbitrix\\b", "wordpress", "1c\\b", "1с\\b"],
+      "scope": "any",
+      "label": "Чужой стек (PHP/1C/Bitrix)"
+    },
+    "wrong_stack_java": {
+      "weight": -0.48,
+      "patterns": ["\\bjava\\b(?!script)", "spring\\s*boot"],
+      "scope": "any",
+      "label": "Java-роль"
+    },
+    "frontend_heavy": {
+      "weight": -0.52,
+      "patterns": ["\\bfrontend\\b", "фронтенд", "react\\b", "vue\\b", "angular"],
+      "scope": "title",
+      "label": "Frontend в title"
+    },
+    "qa_role": {
+      "weight": -0.62,
+      "patterns": ["\\bqa\\b", "тестировщик", "test\\s*engineer"],
+      "scope": "title",
+      "label": "QA-роль"
+    },
+    "intern_trainee": {
+      "weight": -0.55,
+      "patterns": ["стаж[её]р", "\\bintern\\b", "\\btrainee\\b", "без\\s*опыта"],
+      "scope": "any",
+      "label": "Стажёр / trainee"
+    },
+    "senior_lead_heavy": {
+      "weight": -0.38,
+      "patterns": [
+        "\\bsenior\\b",
+        "\\blead\\b",
+        "principal",
+        "\\bstaff\\b",
+        "архитектор",
+        "тимлид",
+        "team\\s*lead",
+        "tech\\s*lead",
+        "head\\s+of"
+      ],
+      "scope": "title",
+      "label": "Senior/Lead без Middle-якоря",
+      "suppress_if": ["middle_level", "python_title_role"]
+    },
+    "ml_only_role": {
+      "weight": -0.28,
+      "patterns": ["\\bml\\s*engineer\\b", "data\\s*scientist", "machine\\s*learning"],
+      "scope": "title",
+      "label": "ML/DS вместо backend",
+      "suppress_if": ["fastapi_match", "django_match"]
+    }
+  },
+  "explain_templates": {
+    "HIGH": [
+      "Сильный матч под Legend: {top_pos}. Итоговый вес {total:+.2f} → HIGH.",
+      "Вакансия близка к целевому профилю Middle+ Python: {top_pos}. Штрафы слабые ({top_neg}).",
+      "Высокий fit: сработали {pos_count} плюса ({top_pos}); минусы почти не тянут вниз."
+    ],
+    "MEDIUM": [
+      "Частичное совпадение: плюсы — {top_pos}; удерживают вниз — {top_neg}. Вес {total:+.2f} → MEDIUM.",
+      "Средний fit: стек/формат есть, но не полный Legend-match. Главное: {top_pos}; риск: {top_neg}.",
+      "Не идеально, но в зоне интереса: {top_pos}. Смотрите минусы: {top_neg}."
+    ],
+    "LOW": [
+      "Слабый fit: доминируют минусы ({top_neg}). Плюсы слабые: {top_pos}. Вес {total:+.2f}.",
+      "Низкий приоритет — {top_neg}. Даже при {top_pos} итоговый вес не дотягивает до MEDIUM.",
+      "Почему LOW: {top_neg}. Не хватает сильных Legend-сигналов ({missing})."
+    ]
+  }
+}

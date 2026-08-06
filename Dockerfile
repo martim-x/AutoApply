@@ -5,6 +5,7 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     HEADLESS=true \
+    ENABLE_REMOTE_BROWSER=true \
     DATA_DIR=/app/data \
     DATABASE_URL=sqlite:////app/data/rabota_apply.sqlite \
     POETRY_VERSION=2.1.3 \
