@@ -247,6 +247,8 @@
       "th.filter": "Filter",
       "th.apply": "Apply",
       "log.title": "Journal",
+      "log.expand": "Expand to fullscreen",
+      "log.collapse": "Collapse",
       "explain.title": "Why this score",
       "explain.close": "Close",
       "explain.pos": "Pros",
