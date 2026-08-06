@@ -22,6 +22,23 @@ class RemoteStopBody(BaseModel):
     save: bool = True
 
 
+class LaunchTextBody(BaseModel):
+    text: str = Field(min_length=1)
+
+
+class LaunchJsonBody(BaseModel):
+    launch: dict[str, Any]
+
+
+class WorkspaceBody(BaseModel):
+    profile: str = Field(default="default", min_length=1, max_length=64)
+    workspace: str = Field(default="hh", max_length=32)
+
+
+class LinkedInLaunchBody(BaseModel):
+    launch: dict[str, Any]
+
+
 def create_api_router() -> APIRouter:
     router = APIRouter(prefix="/api", tags=["api"])
 
@@ -35,6 +52,22 @@ def create_api_router() -> APIRouter:
     @router.get("/config")
     def config(request: Request) -> dict[str, Any]:
         return svc(request).config_public()
+
+    @router.get("/launch")
+    def get_launch(request: Request) -> dict[str, Any]:
+        return svc(request).get_launch()
+
+    @router.post("/launch/validate")
+    def validate_launch(body: LaunchTextBody, request: Request) -> dict[str, Any]:
+        return svc(request).validate_launch_text(body.text)
+
+    @router.post("/launch/text")
+    def save_launch_text(body: LaunchTextBody, request: Request) -> dict[str, Any]:
+        return svc(request).save_launch_from_text(body.text)
+
+    @router.post("/launch/json")
+    def save_launch_json(body: LaunchJsonBody, request: Request) -> dict[str, Any]:
+        return svc(request).save_launch_from_json(body.launch)
 
     @router.get("/profiles")
     def profiles(request: Request) -> dict[str, Any]:
@@ -115,8 +148,10 @@ def create_api_router() -> APIRouter:
         return svc(request).remote_browser_status(profile)
 
     @router.post("/remote-browser/start")
-    def remote_browser_start(body: ProfileBody, request: Request) -> dict[str, Any]:
-        return svc(request).start_remote_browser(body.profile)
+    def remote_browser_start(body: WorkspaceBody, request: Request) -> dict[str, Any]:
+        return svc(request).start_remote_browser(
+            body.profile, workspace=body.workspace
+        )
 
     @router.post("/remote-browser/save")
     def remote_browser_save(body: ProfileBody, request: Request) -> dict[str, Any]:
@@ -125,6 +160,52 @@ def create_api_router() -> APIRouter:
     @router.post("/remote-browser/stop")
     def remote_browser_stop(body: RemoteStopBody, request: Request) -> dict[str, Any]:
         return svc(request).stop_remote_browser(body.profile, save=body.save)
+
+    # ── LinkedIn workspace ────────────────────────────────────
+
+    @router.get("/linkedin/launch")
+    def linkedin_launch_get(request: Request) -> dict[str, Any]:
+        return svc(request).get_linkedin_launch()
+
+    @router.post("/linkedin/launch")
+    def linkedin_launch_save(
+        body: LinkedInLaunchBody, request: Request
+    ) -> dict[str, Any]:
+        return svc(request).save_linkedin_launch(body.launch)
+
+    @router.post("/linkedin/login")
+    def linkedin_login(body: ProfileBody, request: Request) -> dict[str, Any]:
+        return svc(request).start_linkedin_login(body.profile)
+
+    @router.post("/linkedin/network")
+    def linkedin_network(body: ProfileBody, request: Request) -> dict[str, Any]:
+        return svc(request).start_linkedin_network(body.profile)
+
+    @router.post("/linkedin/vacancies/search")
+    def linkedin_vacancies_search(
+        body: ProfileBody, request: Request
+    ) -> dict[str, Any]:
+        return svc(request).start_linkedin_vacancies(body.profile)
+
+    @router.get("/linkedin/contacts")
+    def linkedin_contacts(
+        request: Request,
+        profile: str = Query(default="default"),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return {
+            "contacts": svc(request).list_linkedin_contacts(profile, limit=limit)
+        }
+
+    @router.get("/linkedin/vacancies")
+    def linkedin_vacancies(
+        request: Request,
+        profile: str = Query(default="default"),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return {
+            "vacancies": svc(request).list_linkedin_vacancies(profile, limit=limit)
+        }
 
     @router.websocket("/remote-browser/ws")
     async def remote_browser_ws(

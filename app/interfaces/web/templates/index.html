@@ -1,51 +1,237 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme-pref="system">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>{{ app_name }}</title>
+  <script>
+    (function () {
+      try {
+        var pref = localStorage.getItem("aa-theme") || "system";
+        if (pref !== "light" && pref !== "dark" && pref !== "system") pref = "system";
+        // system = device preference via prefers-color-scheme (not a third palette)
+        var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        var resolved = pref === "system" ? (dark ? "dark" : "light") : pref;
+        document.documentElement.setAttribute("data-theme-pref", pref);
+        document.documentElement.setAttribute("data-theme", resolved);
+      } catch (e) {}
+      try {
+        var lang = localStorage.getItem("aa-lang");
+        if (lang !== "ru" && lang !== "en") {
+          var nav = (navigator.language || "").toLowerCase();
+          lang = nav.indexOf("ru") === 0 ? "ru" : (nav ? "en" : "ru");
+        }
+        document.documentElement.setAttribute("lang", lang);
+      } catch (e) {}
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
+  <svg xmlns="http://www.w3.org/2000/svg" class="svg-sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+    </symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 14.5A8.5 8.5 0 0 1 9.5 3a7 7 0 1 0 11.5 11.5z"/>
+    </symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>
+    </symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 5v14M5 12h14"/>
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 6 9 17l-5-5"/>
+    </symbol>
+    <symbol id="i-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>
+    </symbol>
+    <symbol id="i-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.7-8.7M17 4.5l2.5 2.5M15.5 6.5l2 2"/>
+    </symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>
+    </symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3 4 6v6c0 5 3.4 8.4 8 9.5 4.6-1.1 8-4.5 8-9.5V6l-8-3z"/><path d="m9 12 2 2 4-4"/>
+    </symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
+    </symbol>
+    <symbol id="i-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m22 2-7 20-4-9-9-4 20-7z"/><path d="M22 2 11 13"/>
+    </symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="6" y="6" width="12" height="12" rx="2"/>
+    </symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M18 6 6 18M6 6l12 12"/>
+    </symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/>
+      <circle cx="12" cy="12" r="2.5"/>
+    </symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>
+    </symbol>
+    <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3v12M7 11l5 5 5-5M5 21h14"/>
+    </symbol>
+  </svg>
+
   <div class="shell">
     <header class="top">
       <div class="brand-block">
         <p class="brand">{{ app_name }}</p>
-        <p class="tag">rabota.by · вес-граф · отклик</p>
+        <p class="tag" data-i18n="tagline">hh.ru / rabota.by · LinkedIn · launch-фильтры</p>
       </div>
-      <div class="status-wrap">
-        <div class="status-pill" id="statusPill" data-status="idle">
-          <span class="dot"></span>
-          <span id="statusLabel">idle</span>
+      <div class="top-tools">
+        <div class="workspace-switch" id="workspaceSwitch" role="group" data-workspace="hh" data-i18n="workspace.group" data-i18n-attr="aria-label">
+          <button type="button" class="workspace-btn" data-workspace-set="hh" aria-pressed="true">
+            <span data-i18n="workspace.hh">rabota.by / hh</span>
+          </button>
+          <button type="button" class="workspace-btn" data-workspace-set="linkedin" aria-pressed="false">
+            <span data-i18n="workspace.linkedin">LinkedIn</span>
+          </button>
+        </div>
+        <div class="theme-switch lang-switch" id="langSwitch" role="group" data-lang="ru" data-i18n="lang.group" data-i18n-attr="aria-label">
+          <button type="button" class="theme-btn lang-opt" data-lang-set="ru" aria-pressed="true" data-i18n="lang.ru.aria" data-i18n-attr="title,aria-label">
+            <span aria-hidden="true">RU</span>
+          </button>
+          <button type="button" class="theme-btn lang-opt" data-lang-set="en" aria-pressed="false" data-i18n="lang.en.aria" data-i18n-attr="title,aria-label">
+            <span aria-hidden="true">EN</span>
+          </button>
+        </div>
+        <div class="theme-switch" role="group" data-i18n="theme.group" data-i18n-attr="aria-label">
+          <button type="button" class="theme-btn" data-theme-set="system" data-i18n="theme.system.aria" data-i18n-attr="title,aria-label">
+            <svg class="ico" aria-hidden="true"><use href="#i-monitor"/></svg>
+          </button>
+          <button type="button" class="theme-btn" data-theme-set="light" data-i18n="theme.light.aria" data-i18n-attr="title,aria-label">
+            <svg class="ico" aria-hidden="true"><use href="#i-sun"/></svg>
+          </button>
+          <button type="button" class="theme-btn" data-theme-set="dark" data-i18n="theme.dark.aria" data-i18n-attr="title,aria-label">
+            <svg class="ico" aria-hidden="true"><use href="#i-moon"/></svg>
+          </button>
+        </div>
+        <div class="status-wrap">
+          <div class="status-pill" id="statusPill" data-status="idle">
+            <span class="dot"></span>
+            <span id="statusLabel">idle</span>
+          </div>
         </div>
       </div>
     </header>
 
     <section class="controls">
       <label class="field">
-        <span>Профиль</span>
+        <span data-i18n="profile.label">Профиль</span>
         <div class="row profile-row">
-          <select id="profileSelect" aria-label="Профиль"></select>
-          <input id="newProfile" type="text" placeholder="новый профиль" maxlength="64" autocomplete="off" />
-          <button type="button" id="btnAddProfile" class="ghost touch">+</button>
+          <select id="profileSelect" data-i18n="profile.select" data-i18n-attr="aria-label"></select>
+          <input id="newProfile" type="text" data-i18n="profile.placeholder" data-i18n-attr="placeholder" maxlength="64" autocomplete="off" />
+          <button type="button" id="btnAddProfile" class="ghost touch icon-only" data-i18n="profile.add.aria" data-i18n-attr="aria-label,title">
+            <svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>
+          </button>
         </div>
       </label>
 
-      <div class="actions">
-        <button type="button" id="btnLogin" class="primary touch">Login / Connect</button>
-        <button type="button" id="btnRemoteBrowser" class="primary touch" hidden>Открыть браузер / Login</button>
-        <button type="button" id="btnConfirm" class="ghost touch">Сессия сохранена</button>
-        <button type="button" id="btnSearch" class="touch">Start search</button>
-        <button type="button" id="btnApply" class="touch">Start apply</button>
-        <button type="button" id="btnStop" class="danger touch">Stop</button>
+      <div class="criteria-bar">
+        <button type="button" id="btnLaunchCriteria" class="ghost touch" data-i18n="launch.criteria.aria" data-i18n-attr="aria-label,title">
+          <svg class="ico" aria-hidden="true"><use href="#i-sliders"/></svg>
+          <span class="btn-label" data-i18n="launch.criteria">Критерии</span>
+        </button>
+        <p class="message hint launch-summary" id="launchMeta">site / city / salary / queries…</p>
       </div>
 
+      <div class="actions" id="hhActions">
+        <button type="button" id="btnLogin" class="primary touch">
+          <svg class="ico" aria-hidden="true"><use href="#i-key"/></svg>
+          <span class="btn-label" data-label-login data-i18n="login.connect">Войти</span>
+        </button>
+        <button type="button" id="btnRemoteBrowser" class="primary touch" hidden>
+          <svg class="ico" aria-hidden="true"><use href="#i-globe"/></svg>
+          <span class="btn-label" data-i18n="remote.open">Открыть браузер</span>
+        </button>
+        <button type="button" id="btnConfirm" class="ghost touch">
+          <svg class="ico" aria-hidden="true"><use href="#i-shield"/></svg>
+          <span class="btn-label" data-i18n="session.save">Сохранить сессию</span>
+        </button>
+        <button type="button" id="btnSearch" class="touch">
+          <svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>
+          <span class="btn-label" data-i18n="search">Искать</span>
+        </button>
+        <button type="button" id="btnApply" class="touch">
+          <svg class="ico" aria-hidden="true"><use href="#i-send"/></svg>
+          <span class="btn-label" data-i18n="apply">Откликнуться</span>
+        </button>
+        <button type="button" id="btnStop" class="danger touch">
+          <svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg>
+          <span class="btn-label" data-i18n="stop">Остановить</span>
+        </button>
+      </div>
+
+      <div class="actions" id="liActions" hidden>
+        <button type="button" id="btnLiLogin" class="primary touch">
+          <svg class="ico" aria-hidden="true"><use href="#i-key"/></svg>
+          <span class="btn-label" data-i18n="linkedin.login">Войти в LinkedIn</span>
+        </button>
+        <button type="button" id="btnLiConfirm" class="ghost touch">
+          <svg class="ico" aria-hidden="true"><use href="#i-shield"/></svg>
+          <span class="btn-label" data-i18n="session.save">Сохранить сессию</span>
+        </button>
+        <button type="button" id="btnLiNetwork" class="touch">
+          <svg class="ico" aria-hidden="true"><use href="#i-globe"/></svg>
+          <span class="btn-label" data-i18n="linkedin.network">Расширить сеть</span>
+        </button>
+        <button type="button" id="btnLiVacancies" class="touch">
+          <svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>
+          <span class="btn-label" data-i18n="linkedin.vacancies">Собрать вакансии</span>
+        </button>
+        <button type="button" id="btnLiCriteria" class="ghost touch">
+          <svg class="ico" aria-hidden="true"><use href="#i-sliders"/></svg>
+          <span class="btn-label" data-i18n="linkedin.criteria">Критерии LI</span>
+        </button>
+        <button type="button" id="btnLiStop" class="danger touch">
+          <svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg>
+          <span class="btn-label" data-i18n="stop">Остановить</span>
+        </button>
+      </div>
+
+      <div class="li-tabs" id="liTabs" hidden>
+        <button type="button" class="li-tab active" data-li-tab="network" data-i18n="linkedin.tab.network">Контакты</button>
+        <button type="button" class="li-tab" data-li-tab="vacancies" data-i18n="linkedin.tab.vacancies">Вакансии</button>
+      </div>
+
+      <div class="report-bar">
+        <label class="field report-field">
+          <span data-i18n="report.label">Отчёт</span>
+          <div class="row report-row">
+            <select id="reportKind" data-i18n="report.kind" data-i18n-attr="aria-label">
+              <option value="work" data-i18n="report.kind.work">Работа</option>
+              <option value="queue" data-i18n="report.kind.queue">Очередь</option>
+              <option value="launch" data-i18n="report.kind.launch">Launch</option>
+            </select>
+            <button type="button" id="btnDownloadReport" class="ghost touch" data-i18n="report.download.aria" data-i18n-attr="aria-label,title">
+              <svg class="ico" aria-hidden="true"><use href="#i-download"/></svg>
+              <span class="btn-label" data-i18n="report.download">Скачать отчёт</span>
+            </button>
+          </div>
+        </label>
+        <p class="message hint" id="reportScheduleHint"></p>
+        <p class="message hint" id="parseScheduleHint"></p>
+      </div>
+
+      <div id="notifyBar" class="notify-bar" hidden></div>
+      <p class="message hint" id="lastAlertLine" hidden></p>
       <p class="message" id="statusMessage">Готово к работе</p>
-      <p class="message hint" id="remoteHint" hidden>
+      <p class="message hint" id="remoteHint" hidden data-i18n="remote.hint">
         Remote browser: screencast с сервера. Войдите на rabota.by в окне ниже.
+      </p>
+      <p class="message hint" id="linkedinRisk" hidden data-i18n="linkedin.risk">
+        LinkedIn: только браузерная автоматизация. Агрессивные лимиты могут привести к ограничениям аккаунта.
       </p>
     </section>
 
@@ -53,19 +239,25 @@
       <div class="remote-panel">
         <div class="remote-bar">
           <div>
-            <strong>Remote browser</strong>
+            <strong data-i18n="remote.title">Remote browser</strong>
             <span id="remoteUrl" class="remote-url"></span>
           </div>
           <div class="remote-actions">
-            <button type="button" id="btnRemoteSave" class="ghost touch">Сессия сохранена</button>
-            <button type="button" id="btnRemoteClose" class="danger touch">Закрыть</button>
+            <button type="button" id="btnRemoteSave" class="ghost touch">
+              <svg class="ico" aria-hidden="true"><use href="#i-shield"/></svg>
+              <span class="btn-label" data-i18n="session.save">Сохранить сессию</span>
+            </button>
+            <button type="button" id="btnRemoteClose" class="danger touch">
+              <svg class="ico" aria-hidden="true"><use href="#i-x"/></svg>
+              <span class="btn-label" data-i18n="remote.close">Закрыть</span>
+            </button>
           </div>
         </div>
         <div class="remote-stage">
           <canvas id="remoteCanvas" width="1280" height="900" tabindex="0"></canvas>
           <p id="remoteOverlay" class="remote-overlay">Подключение…</p>
         </div>
-        <p class="remote-help">Тап/клик = фокус. Ввод идёт на серверный Chromium.</p>
+        <p class="remote-help" data-i18n="remote.help">Тап/клик = фокус. Ввод идёт на серверный Chromium.</p>
       </div>
     </div>
 
@@ -73,23 +265,31 @@
       <div class="stat"><span>HIGH</span><strong id="stHigh">0</strong></div>
       <div class="stat"><span>MEDIUM</span><strong id="stMedium">0</strong></div>
       <div class="stat"><span>LOW</span><strong id="stLow">0</strong></div>
-      <div class="stat"><span>Queued</span><strong id="stQueued">0</strong></div>
-      <div class="stat"><span>Applied</span><strong id="stApplied">0</strong></div>
-      <div class="stat"><span>Session</span><strong id="stSession">нет</strong></div>
+      <div class="stat"><span data-i18n="stats.queued">В очереди</span><strong id="stQueued">0</strong></div>
+      <div class="stat"><span data-i18n="stats.applied">Отклики</span><strong id="stApplied">0</strong></div>
+      <div class="stat"><span data-i18n="stats.session">Сессия</span><strong id="stSession">нет</strong></div>
     </section>
 
-    <section class="panels">
+    <section class="stats" id="liStatsGrid" hidden>
+      <div class="stat"><span data-i18n="linkedin.stats.contacts">Контакты</span><strong id="stLiContacts">0</strong></div>
+      <div class="stat"><span data-i18n="linkedin.stats.connected">Connect</span><strong id="stLiConnected">0</strong></div>
+      <div class="stat"><span data-i18n="linkedin.stats.pending">Pending</span><strong id="stLiPending">0</strong></div>
+      <div class="stat"><span data-i18n="linkedin.stats.vacancies">Вакансии LI</span><strong id="stLiVacancies">0</strong></div>
+      <div class="stat"><span data-i18n="stats.session">Сессия LI</span><strong id="stLiSession">нет</strong></div>
+    </section>
+
+    <section class="panels" id="hhPanels">
       <div class="panel">
-        <h2>Очередь (HIGH → MEDIUM → LOW)</h2>
+        <h2 data-i18n="queue.title">Очередь (HIGH → MEDIUM → LOW)</h2>
         <div class="table-wrap desktop-only">
           <table>
             <thead>
               <tr>
-                <th>Cat</th>
-                <th>Score</th>
-                <th>Title</th>
-                <th>Filter</th>
-                <th>Apply</th>
+                <th data-i18n="th.cat">Кат.</th>
+                <th data-i18n="th.score">Score</th>
+                <th data-i18n="th.title">Вакансия</th>
+                <th data-i18n="th.filter">Фильтр</th>
+                <th data-i18n="th.apply">Отклик</th>
                 <th></th>
               </tr>
             </thead>
@@ -99,8 +299,45 @@
         <div class="vac-cards" id="vacCards" aria-live="polite"></div>
       </div>
       <div class="panel panel-log">
-        <h2>Журнал</h2>
+        <h2 data-i18n="log.title">Журнал</h2>
         <ul class="log" id="logList"></ul>
+      </div>
+    </section>
+
+    <section class="panels" id="liPanels" hidden>
+      <div class="panel" id="liNetworkPanel">
+        <h2 data-i18n="linkedin.contacts.title">Контакты LinkedIn</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th data-i18n="th.status">Статус</th>
+                <th data-i18n="th.title">Профиль</th>
+                <th data-i18n="th.query">Запрос</th>
+              </tr>
+            </thead>
+            <tbody id="liContactBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel" id="liVacPanel" hidden>
+        <h2 data-i18n="linkedin.vacancies.title">Вакансии LinkedIn</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th data-i18n="th.title">Вакансия</th>
+                <th data-i18n="th.loc">Локация</th>
+                <th data-i18n="th.query">Запрос</th>
+              </tr>
+            </thead>
+            <tbody id="liVacBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel panel-log">
+        <h2 data-i18n="log.title">Журнал</h2>
+        <ul class="log" id="liLogList"></ul>
       </div>
     </section>
 
@@ -109,21 +346,67 @@
     </footer>
   </div>
 
+  <div id="launchModal" class="launch-modal" hidden>
+    <div class="launch-panel" role="dialog" aria-modal="true" aria-labelledby="launchTitle">
+      <div class="launch-bar">
+        <h3 id="launchTitle" data-i18n="launch.modal.title">Критерии запуска</h3>
+        <button type="button" id="btnLaunchClose" class="ghost touch icon-only" data-i18n="launch.close" data-i18n-attr="aria-label,title">
+          <svg class="ico" aria-hidden="true"><use href="#i-x"/></svg>
+        </button>
+      </div>
+      <p class="launch-desc" data-i18n="launch.label">Параметры запуска (строгий формат → config/launch.json)</p>
+      <textarea id="launchText" class="launch-text" rows="12" spellcheck="false" data-i18n="launch.aria" data-i18n-attr="aria-label"></textarea>
+      <div class="actions launch-actions">
+        <button type="button" id="btnLaunchValidate" class="ghost touch">
+          <svg class="ico" aria-hidden="true"><use href="#i-check"/></svg>
+          <span class="btn-label" data-i18n="launch.validate">Проверить</span>
+        </button>
+        <button type="button" id="btnLaunchSave" class="primary touch">
+          <svg class="ico" aria-hidden="true"><use href="#i-save"/></svg>
+          <span class="btn-label" data-i18n="launch.save">Сохранить</span>
+        </button>
+      </div>
+      <p class="message" id="launchMessage"></p>
+    </div>
+  </div>
+
+  <div id="liLaunchModal" class="launch-modal" hidden>
+    <div class="launch-panel" role="dialog" aria-modal="true" aria-labelledby="liLaunchTitle">
+      <div class="launch-bar">
+        <h3 id="liLaunchTitle" data-i18n="linkedin.modal.title">Критерии LinkedIn</h3>
+        <button type="button" id="btnLiLaunchClose" class="ghost touch icon-only" data-i18n="launch.close" data-i18n-attr="aria-label,title">
+          <svg class="ico" aria-hidden="true"><use href="#i-x"/></svg>
+        </button>
+      </div>
+      <p class="launch-desc" data-i18n="linkedin.modal.desc">JSON → config/linkedin.launch.json</p>
+      <textarea id="liLaunchText" class="launch-text" rows="14" spellcheck="false"></textarea>
+      <div class="actions launch-actions">
+        <button type="button" id="btnLiLaunchSave" class="primary touch">
+          <svg class="ico" aria-hidden="true"><use href="#i-save"/></svg>
+          <span class="btn-label" data-i18n="launch.save">Сохранить</span>
+        </button>
+      </div>
+      <p class="message" id="liLaunchMessage"></p>
+    </div>
+  </div>
+
   <div id="explainModal" class="explain-modal" hidden>
-    <div class="explain-panel" role="dialog" aria-labelledby="explainTitle">
+    <div class="explain-panel" role="dialog" aria-modal="true" aria-labelledby="explainTitle">
       <div class="explain-bar">
-        <h3 id="explainTitle">Почему такой score</h3>
-        <button type="button" id="btnExplainClose" class="ghost touch" aria-label="Закрыть">×</button>
+        <h3 id="explainTitle" data-i18n="explain.title">Почему такой score</h3>
+        <button type="button" id="btnExplainClose" class="ghost touch icon-only" data-i18n="explain.close" data-i18n-attr="aria-label,title">
+          <svg class="ico" aria-hidden="true"><use href="#i-x"/></svg>
+        </button>
       </div>
       <p class="explain-meta" id="explainMeta"></p>
       <p class="explain-text" id="explainText"></p>
       <div class="explain-cols">
         <div>
-          <h4>Плюсы</h4>
+          <h4 data-i18n="explain.pos">Плюсы</h4>
           <ul id="explainPos"></ul>
         </div>
         <div>
-          <h4>Минусы</h4>
+          <h4 data-i18n="explain.neg">Минусы</h4>
           <ul id="explainNeg"></ul>
         </div>
       </div>
@@ -131,6 +414,7 @@
     </div>
   </div>
 
+  <script src="/static/i18n.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

@@ -77,5 +77,23 @@ def test_journal_and_status(tmp_path: Path):
         )
     )
     assert db.applications.already_applied("default", "https://rabota.by/vacancy/9")
+    db.vacancies.upsert(
+        Vacancy(
+            profile="default",
+            url="https://rabota.by/vacancy/9",
+            vacancy_id="9",
+            title="x",
+            category=FitCategory.HIGH,
+            score=90,
+            filter_status="ok",
+            apply_status=ApplyStatus.QUEUED,
+        )
+    )
+    assert db.vacancies.exists("default", url="https://rabota.by/vacancy/9")
+    assert db.vacancies.exists("default", vacancy_id="9")
+    assert not db.vacancies.exists("default", vacancy_id="404")
+    urls, ids = db.vacancies.known_keys("default")
+    assert "https://rabota.by/vacancy/9" in urls
+    assert "9" in ids
     stats = db.stats("default")
     assert stats["applied"] == 1

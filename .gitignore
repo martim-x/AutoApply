@@ -11,4 +11,6 @@ dist/
 data/
 *.sqlite
 *.storage.json
+config/launch.json
+config/linkedin.launch.json
 .DS_Store

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from .entities import CategoryResult
 from .enums import FitCategory
 from .scoring import score_vacancy
@@ -12,12 +14,16 @@ def categorize_vacancy(
     description: str = "",
     *,
     url: str = "",
+    location: Any | None = None,
+    launch: Any | None = None,
 ) -> CategoryResult:
     """
     HIGH / MEDIUM / LOW from declarative weights (config/weights.json).
-    Legend-oriented signals: Python role, FastAPI/Django, remote/hybrid, red flags.
+    Legend-oriented signals + optional launch (geo / salary / level).
     """
-    breakdown = score_vacancy(title, description, url=url)
+    breakdown = score_vacancy(
+        title, description, url=url, location=location, launch=launch
+    )
     return CategoryResult(
         category=breakdown.category,
         score=breakdown.score,
@@ -49,6 +55,10 @@ def explain_vacancy(
     description: str = "",
     *,
     url: str = "",
+    location: Any | None = None,
+    launch: Any | None = None,
 ) -> dict:
     """Full transparent breakdown for UI «Explain»."""
-    return score_vacancy(title, description, url=url).as_dict()
+    return score_vacancy(
+        title, description, url=url, location=location, launch=launch
+    ).as_dict()

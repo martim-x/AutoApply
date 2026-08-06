@@ -5,7 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Protocol
 
-from .entities import Application, JobState, JournalEntry, Profile, Vacancy
+from .entities import (
+    Application,
+    JobState,
+    JournalEntry,
+    LinkedInContact,
+    LinkedInVacancyLink,
+    Profile,
+    Vacancy,
+)
 from .enums import JobStatus
 
 
@@ -18,6 +26,14 @@ class ProfileRepository(Protocol):
 
 class VacancyRepository(Protocol):
     def upsert(self, vacancy: Vacancy) -> int: ...
+    def exists(
+        self,
+        profile: str,
+        *,
+        url: str | None = None,
+        vacancy_id: str | None = None,
+    ) -> bool: ...
+    def known_keys(self, profile: str) -> tuple[set[str], set[str]]: ...
     def list_for_profile(
         self,
         profile: str,
@@ -59,6 +75,22 @@ class JournalRepository(Protocol):
     def recent(self, profile: str | None = None, limit: int = 80) -> list[JournalEntry]: ...
 
 
+class LinkedInContactRepository(Protocol):
+    def upsert(self, contact: LinkedInContact) -> int: ...
+    def list_for_profile(self, profile: str, limit: int = 200) -> list[LinkedInContact]: ...
+    def stats(self, profile: str) -> dict[str, Any]: ...
+
+
+class LinkedInVacancyRepository(Protocol):
+    def upsert(self, vacancy: LinkedInVacancyLink) -> int: ...
+    def exists(self, profile: str, *, url: str | None = None) -> bool: ...
+    def known_urls(self, profile: str) -> set[str]: ...
+    def list_for_profile(
+        self, profile: str, limit: int = 200
+    ) -> list[LinkedInVacancyLink]: ...
+    def stats(self, profile: str) -> dict[str, Any]: ...
+
+
 class UnitOfWork(Protocol):
     """Facade over all repositories — one DB backend."""
 
@@ -67,6 +99,8 @@ class UnitOfWork(Protocol):
     applications: ApplicationRepository
     jobs: JobStateRepository
     journal: JournalRepository
+    linkedin_contacts: LinkedInContactRepository
+    linkedin_vacancies: LinkedInVacancyRepository
 
     def stats(self, profile: str) -> dict[str, Any]: ...
 

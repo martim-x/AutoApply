@@ -1,0 +1,17 @@
+{
+  "locations": ["Minsk", "Russia", "CIS"],
+  "people_queries": ["HR", "backend developer", "Python backend"],
+  "vacancy_queries": [
+    "Python backend",
+    "Backend developer",
+    "Python developer"
+  ],
+  "connect_limit": 15,
+  "vacancy_limit": 40,
+  "max_profiles_per_query": 10,
+  "min_action_interval": 8.0,
+  "after_connect_delay": 14.0,
+  "jitter": 0.4,
+  "dry_run": false,
+  "note": "Browser automation only. Keep limits conservative — LinkedIn may restrict accounts."
+}

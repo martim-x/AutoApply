@@ -108,10 +108,13 @@ def score_vacancy(
     *,
     url: str = "",
     weights_path: str | None = None,
+    location: Any | None = None,
+    launch: Any | None = None,
 ) -> ScoreBreakdown:
     """
     Aggregate signed weights in [-1, +1] per fired signal.
     Normalize to score 0..100 and map to HIGH / MEDIUM / LOW.
+    Optional `launch` (LaunchProfile) adds geo / salary / level signals.
     """
     title = title or ""
     description = description or ""
@@ -128,6 +131,68 @@ def score_vacancy(
                 id=sid,
                 label=str(spec.get("label") or sid),
                 weight=weight,
+            )
+
+    loc = location
+    if launch is not None and loc is None:
+        loc = getattr(launch, "location", None)
+
+    if loc is not None:
+        from app.domain.launch_profile import location_match_score
+
+        code, weight = location_match_score(title, description, loc)
+        labels = {
+            "location_city_hit": "Город совпал с launch-профилем",
+            "location_country_only": "Только страна (город не указан)",
+            "location_other_city": "Другой город (строгое предпочтение)",
+            "location_area_assumed": "Локация через area поиска",
+            "location_unspecified": "Локация не уточнена в тексте",
+        }
+        if abs(weight) > 1e-9:
+            fired[code] = SignalHit(
+                id=code,
+                label=labels.get(code, code),
+                weight=max(-1.0, min(1.0, float(weight))),
+            )
+
+    if launch is not None:
+        from app.domain.launch_profile import level_match_score, salary_match_score
+
+        scode, sweight = salary_match_score(
+            title,
+            description,
+            salary_min_usd=getattr(launch, "salary_min_usd", None),
+            salary_max_usd=getattr(launch, "salary_max_usd", None),
+        )
+        salary_labels = {
+            "salary_in_range": "Вилка пересекается с Legend ($)",
+            "salary_below": "ЗП ниже вашей вилки",
+            "salary_above": "ЗП выше верхней границы вилки",
+            "salary_unknown": "ЗП не распознана",
+            "salary_prefs_off": "Вилка не задана",
+        }
+        if abs(sweight) > 1e-9:
+            fired[scode] = SignalHit(
+                id=scode,
+                label=salary_labels.get(scode, scode),
+                weight=max(-1.0, min(1.0, float(sweight))),
+            )
+
+        lcode, lweight = level_match_score(
+            title, description, getattr(launch, "level", "middle+") or "middle+"
+        )
+        level_labels = {
+            "level_middle_hit": "Уровень Middle/Middle+ совпал",
+            "level_senior_ok": "Senior-вакансия при цели Middle+",
+            "level_junior_mismatch": "Junior при цели Middle+",
+            "level_lead_heavy": "Lead/тимлид — тяжеловато",
+            "level_unspecified": "Уровень неясен",
+        }
+        if abs(lweight) > 1e-9:
+            fired[lcode] = SignalHit(
+                id=lcode,
+                label=level_labels.get(lcode, lcode),
+                weight=max(-1.0, min(1.0, float(lweight))),
             )
 
     # suppress_if: drop signal when suppressors also fired
@@ -165,6 +230,14 @@ def score_vacancy(
     if any(c.id == "gov_marker" for c in contributions):
         category = FitCategory.LOW
         score = min(score, 25)
+    if any(c.id == "location_other_city" for c in contributions):
+        category = FitCategory.LOW
+        score = min(score, 30)
+    if any(c.id == "salary_below" for c in contributions):
+        category = FitCategory.LOW if any(
+            abs(c.weight) >= 0.8 for c in contributions if c.id == "salary_below"
+        ) else category
+        score = min(score, 40)
     if any(c.id == "office_only" for c in contributions) and not any(
         c.id in ("remote_format", "hybrid_format") for c in contributions
     ):

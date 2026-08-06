@@ -8,6 +8,7 @@ import threading
 import time
 import traceback
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from app.domain.enums import JobStatus
@@ -38,11 +39,26 @@ class RemoteBrowserSession:
         settings: Settings,
         *,
         start_url: str | None = None,
+        state_path: Path | None = None,
+        workspace: str = "hh",
     ) -> None:
         self.profile = profile
         self.uow = uow
         self.settings = settings
-        self.start_url = start_url or f"{settings.base_url}/account/login"
+        self.workspace = workspace if workspace in ("hh", "linkedin") else "hh"
+        self.state_path_override = Path(state_path) if state_path else None
+        if start_url:
+            self.start_url = start_url
+        elif self.workspace == "linkedin":
+            from app.domain.linkedin_profile import LINKEDIN_LOGIN
+
+            self.start_url = LINKEDIN_LOGIN
+        else:
+            from app.domain.launch_profile import load_launch_profile
+
+            launch = load_launch_profile(settings.launch_path)
+            base = launch.base_url if launch else settings.base_url
+            self.start_url = f"{base}/account/login"
         self.cmd_queue: queue.Queue[dict[str, Any]] = queue.Queue()
         self.frame_queue: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=2)
         self._stop = threading.Event()
@@ -59,6 +75,13 @@ class RemoteBrowserSession:
         self._context: Any = None
         self._browser: Any = None
         self._saved = False
+
+    def resolved_state_path(self) -> Path:
+        if self.state_path_override is not None:
+            return Path(self.state_path_override)
+        if self.workspace == "linkedin":
+            return self.settings.linkedin_state_path(self.profile)
+        return self.settings.state_path(self.profile)
 
     def start(self) -> None:
         self._thread.start()
@@ -190,7 +213,7 @@ class RemoteBrowserSession:
             uow.jobs.set_status(
                 profile,
                 JobStatus.DONE,
-                f"Сессия сохранена (remote): {self.settings.state_path(profile).name}",
+                f"Сессия сохранена (remote): {self.resolved_state_path().name}",
             )
         else:
             uow.jobs.set_status(profile, JobStatus.IDLE, "Remote browser закрыт")
@@ -229,11 +252,16 @@ class RemoteBrowserSession:
         if kind == "save":
             try:
                 context.storage_state(path=str(sp))
-                self.uow.profiles.save_session(self.profile, sp)
+                # HH session is tracked on profiles; LinkedIn uses a separate file
+                if self.workspace != "linkedin":
+                    self.uow.profiles.save_session(self.profile, sp)
                 self._saved = True
-                self.uow.journal.log(
-                    self.profile, "session_saved", f"Сессия → {sp}"
+                event = (
+                    "linkedin_session_saved"
+                    if self.workspace == "linkedin"
+                    else "session_saved"
                 )
+                self.uow.journal.log(self.profile, event, f"Сессия → {sp}")
                 self.uow.jobs.set_status(
                     self.profile,
                     JobStatus.WAITING_USER,
@@ -314,9 +342,9 @@ class RemoteBrowserSession:
 
     def _launch(self, p, profile: str):
         s = self.settings
-        sp = s.state_path(profile)
+        sp = self.resolved_state_path()
         kwargs: dict[str, Any] = {
-            "locale": "ru-RU",
+            "locale": "en-US" if self.workspace == "linkedin" else "ru-RU",
             "viewport": dict(VIEWPORT),
         }
         # Remote UI works headless; force headless when flag set or HEADLESS=true
@@ -351,13 +379,21 @@ class RemoteBrowserManager:
                 return None
             return sess
 
-    def start(self, profile: str, *, start_url: str | None = None) -> dict[str, Any]:
+    def start(
+        self,
+        profile: str,
+        *,
+        start_url: str | None = None,
+        workspace: str = "hh",
+        state_path: Path | None = None,
+    ) -> dict[str, Any]:
         if not self.enabled():
             return {
                 "ok": False,
                 "error": "remote browser disabled (set ENABLE_REMOTE_BROWSER=true)",
             }
         profile = (profile or "default").strip() or "default"
+        workspace = workspace if workspace in ("hh", "linkedin") else "hh"
         with self._lock:
             existing = self._sessions.get(profile)
             if existing and existing.alive:
@@ -370,7 +406,12 @@ class RemoteBrowserManager:
                 }
             self.uow.profiles.ensure_profile(profile)
             sess = RemoteBrowserSession(
-                profile, self.uow, self.settings, start_url=start_url
+                profile,
+                self.uow,
+                self.settings,
+                start_url=start_url,
+                state_path=state_path,
+                workspace=workspace,
             )
             self._sessions[profile] = sess
             sess.start()
@@ -387,15 +428,20 @@ class RemoteBrowserManager:
             "viewport": VIEWPORT,
             "url": sess.url,
             "ws_path": f"/api/remote-browser/ws?profile={profile}",
+            "workspace": workspace,
         }
 
     def save(self, profile: str) -> dict[str, Any]:
         sess = self.get(profile)
         if not sess:
-            sp = self.settings.state_path(profile)
-            if sp.exists():
-                self.uow.profiles.save_session(profile, sp)
-                return {"ok": True, "message": "session file already on disk"}
+            # Prefer path from last known workspace files on disk
+            for sp in (
+                self.settings.state_path(profile),
+                self.settings.linkedin_state_path(profile),
+            ):
+                if sp.exists():
+                    self.uow.profiles.save_session(profile, sp)
+                    return {"ok": True, "message": "session file already on disk"}
             return {"ok": False, "error": "remote browser not running"}
         sess.request_save()
         # give thread a moment

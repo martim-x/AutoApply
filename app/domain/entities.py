@@ -98,3 +98,32 @@ class JournalEntry:
     payload: dict[str, Any] = field(default_factory=dict)
     ts: float | None = None
     id: int | None = None
+
+
+@dataclass
+class LinkedInContact:
+    profile: str
+    url: str
+    id: int | None = None
+    name: str = ""
+    headline: str = ""
+    location: str = ""
+    query: str = ""
+    status: str = "pending"  # connected | pending | skipped | error | dry_run
+    error: str | None = None
+    created_at: float | None = None
+    updated_at: float | None = None
+
+
+@dataclass
+class LinkedInVacancyLink:
+    profile: str
+    url: str
+    id: int | None = None
+    title: str = ""
+    company: str = ""
+    location: str = ""
+    query: str = ""
+    source: str = "linkedin"
+    created_at: float | None = None
+    updated_at: float | None = None

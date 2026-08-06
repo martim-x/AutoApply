@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme-pref="system">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>{{ app_name }} — .env</title>
+  <script>
+    (function () {
+      try {
+        var pref = localStorage.getItem("aa-theme") || "system";
+        var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        var resolved = pref === "system" ? (dark ? "dark" : "light") : pref;
+        document.documentElement.setAttribute("data-theme", resolved);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="admin-body">
+  <main class="admin-shell admin-shell-wide">
+    <header class="admin-header admin-header-row">
+      <div>
+        <p class="admin-brand">{{ app_name }}</p>
+        <h1>Редактор .env</h1>
+        <p class="admin-lead"><code>{{ env_path }}</code></p>
+      </div>
+      <form method="post" action="/admin/logout">
+        <button type="submit">Выйти</button>
+      </form>
+    </header>
+
+    {% if message %}
+    <p class="admin-flash admin-flash-ok" role="status">{{ message }}</p>
+    {% endif %}
+    {% if error %}
+    <p class="admin-flash admin-flash-error" role="alert">{{ error }}</p>
+    {% endif %}
+
+    <p class="admin-note">
+      После сохранения <strong>перезапустите контейнер</strong> (Railway → Restart),
+      иначе часть переменных останется со старыми значениями из памяти процесса.
+      На Railway переменные из панели Variables имеют приоритет над файлом <code>.env</code>.
+    </p>
+
+    <form class="admin-card admin-card-editor" method="post" action="/admin/env">
+      <label class="admin-field">
+        <span>Содержимое .env</span>
+        <textarea name="content" spellcheck="false" rows="24" class="admin-env">{{ env_content }}</textarea>
+      </label>
+      <div class="admin-actions">
+        <button type="submit" class="primary admin-submit">Сохранить</button>
+        <a class="admin-link-btn" href="/">К приложению</a>
+      </div>
+    </form>
+  </main>
+</body>
+</html>

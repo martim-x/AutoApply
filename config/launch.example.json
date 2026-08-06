@@ -1,0 +1,23 @@
+{
+  "site": "rabota.by",
+  "location": {
+    "country": "Беларусь",
+    "city": "Минск",
+    "strict": true
+  },
+  "queries": [
+    "python-разработчик",
+    "python-developer",
+    "python разработчик",
+    "python developer"
+  ],
+  "require_remote_or_hybrid": true,
+  "skip_gov": true,
+  "require_python_keywords": true,
+  "apply_limit": 30,
+  "dry_run": false,
+  "salary_min_usd": 2200,
+  "salary_max_usd": 2800,
+  "salary_strict": false,
+  "level": "middle+"
+}

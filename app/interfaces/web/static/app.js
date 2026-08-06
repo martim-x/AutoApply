@@ -1,5 +1,6 @@
 (() => {
   const $ = (id) => document.getElementById(id);
+  const t = (key, vars) => (window.AA_I18N ? window.AA_I18N.t(key, vars) : key);
   const profileSelect = $("profileSelect");
   const statusPill = $("statusPill");
   const statusLabel = $("statusLabel");
@@ -9,12 +10,22 @@
   const remoteOverlay = $("remoteOverlay");
   const remoteUrl = $("remoteUrl");
   const explainModal = $("explainModal");
+  const launchModal = $("launchModal");
   const ctx = remoteCanvas.getContext("2d");
 
   let remoteEnabled = false;
   let ws = null;
   let viewport = { width: 1280, height: 900 };
   let img = new Image();
+  let lastLaunch = null;
+  let launchLoaded = false;
+  let remoteOverlayKey = null;
+  let lastStatusCode = "idle";
+  let lastHasSession = false;
+  let lastHasLiSession = false;
+  let workspace = "hh";
+  let liTab = "network";
+  const WORKSPACE_KEY = "aa-workspace";
 
   function profile() {
     return profileSelect.value || "default";
@@ -44,13 +55,95 @@
     });
   }
 
+  function syncLoginLabel() {
+    const loginLabel = document.querySelector("[data-label-login]");
+    if (!loginLabel) return;
+    const key = remoteEnabled ? "login.remote" : "login.connect";
+    loginLabel.setAttribute("data-i18n", key);
+    loginLabel.textContent = t(key);
+  }
+
   function applyRemoteUiFlag(enabled) {
     remoteEnabled = !!enabled;
     $("btnRemoteBrowser").hidden = !remoteEnabled;
     $("remoteHint").hidden = !remoteEnabled;
-    $("btnLogin").textContent = remoteEnabled
-      ? "Login (remote)"
-      : "Login / Connect";
+    syncLoginLabel();
+  }
+
+  function statusDisplay(code) {
+    const key = `status.${code}`;
+    const translated = t(key);
+    return translated === key ? code : translated;
+  }
+
+  function setRemoteOverlay(keyOrText, isKey) {
+    if (isKey) {
+      remoteOverlayKey = keyOrText;
+      remoteOverlay.textContent = t(keyOrText);
+      remoteOverlay.removeAttribute("data-i18n");
+    } else {
+      remoteOverlayKey = null;
+      remoteOverlay.textContent = keyOrText;
+      remoteOverlay.removeAttribute("data-i18n");
+    }
+  }
+
+  const THEME_KEY = "aa-theme";
+
+  function systemPrefersDark() {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+
+  function resolveTheme(pref) {
+    // "system" follows the device/OS preference — not a third palette.
+    if (pref === "light" || pref === "dark") return pref;
+    return systemPrefersDark() ? "dark" : "light";
+  }
+
+  function syncThemeButtons(pref) {
+    document.querySelectorAll("[data-theme-set]").forEach((btn) => {
+      btn.setAttribute(
+        "aria-pressed",
+        btn.getAttribute("data-theme-set") === pref ? "true" : "false"
+      );
+    });
+  }
+
+  function applyTheme(pref) {
+    const mode = pref === "light" || pref === "dark" || pref === "system"
+      ? pref
+      : "system";
+    try {
+      localStorage.setItem(THEME_KEY, mode);
+    } catch (e) {}
+    document.documentElement.setAttribute("data-theme-pref", mode);
+    document.documentElement.setAttribute("data-theme", resolveTheme(mode));
+    syncThemeButtons(mode);
+  }
+
+  function initTheme() {
+    let pref = "system";
+    try {
+      pref = localStorage.getItem(THEME_KEY) || "system";
+    } catch (e) {}
+    applyTheme(pref);
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onSystemSchemeChange = () => {
+      const current =
+        document.documentElement.getAttribute("data-theme-pref") || "system";
+      if (current !== "system") return;
+      document.documentElement.setAttribute(
+        "data-theme",
+        systemPrefersDark() ? "dark" : "light"
+      );
+    };
+    if (mq.addEventListener) mq.addEventListener("change", onSystemSchemeChange);
+    else if (mq.addListener) mq.addListener(onSystemSchemeChange);
+    document.querySelectorAll("[data-theme-set]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        applyTheme(btn.getAttribute("data-theme-set"));
+      });
+    });
   }
 
   function escapeHtml(s) {
@@ -88,11 +181,100 @@
     }
   }
 
+  function showNotifications(list) {
+    const bar = $("notifyBar");
+    if (!bar) return;
+    const items = (list || []).filter(Boolean);
+    if (!items.length) {
+      bar.hidden = true;
+      bar.innerHTML = "";
+      return;
+    }
+    bar.hidden = false;
+    bar.innerHTML = items
+      .slice(0, 6)
+      .map((n) => `<div class="notify-item">${escapeHtml(n)}</div>`)
+      .join("");
+  }
+
+  function showLastAlert(alert) {
+    const el = $("lastAlertLine");
+    if (!el) return;
+    if (!alert || !alert.message) {
+      el.hidden = true;
+      el.textContent = "";
+      return;
+    }
+    const ev = alert.event || "?";
+    el.hidden = false;
+    el.textContent = t("alert.last", { event: ev, message: alert.message });
+  }
+
+  function applyWorkspace(ws) {
+    workspace = ws === "linkedin" ? "linkedin" : "hh";
+    try {
+      localStorage.setItem(WORKSPACE_KEY, workspace);
+    } catch (_) {}
+    const sw = $("workspaceSwitch");
+    if (sw) sw.dataset.workspace = workspace;
+    document.querySelectorAll("[data-workspace-set]").forEach((btn) => {
+      btn.setAttribute(
+        "aria-pressed",
+        btn.getAttribute("data-workspace-set") === workspace ? "true" : "false"
+      );
+    });
+    const isLi = workspace === "linkedin";
+    if ($("hhActions")) $("hhActions").hidden = isLi;
+    if ($("liActions")) $("liActions").hidden = !isLi;
+    if ($("liTabs")) $("liTabs").hidden = !isLi;
+    if ($("hhPanels")) $("hhPanels").hidden = isLi;
+    if ($("liPanels")) $("liPanels").hidden = !isLi;
+    if ($("statsGrid")) $("statsGrid").hidden = isLi;
+    if ($("liStatsGrid")) $("liStatsGrid").hidden = !isLi;
+    if ($("linkedinRisk")) $("linkedinRisk").hidden = !isLi;
+    if ($("criteria-bar") || document.querySelector(".criteria-bar")) {
+      const bar = document.querySelector(".criteria-bar");
+      if (bar) bar.hidden = isLi;
+    }
+    applyLiTab(liTab);
+  }
+
+  function applyLiTab(tab) {
+    liTab = tab === "vacancies" ? "vacancies" : "network";
+    document.querySelectorAll("[data-li-tab]").forEach((btn) => {
+      btn.classList.toggle("active", btn.getAttribute("data-li-tab") === liTab);
+    });
+    if ($("liNetworkPanel")) $("liNetworkPanel").hidden = liTab !== "network";
+    if ($("liVacPanel")) $("liVacPanel").hidden = liTab !== "vacancies";
+  }
+
+  function initWorkspace() {
+    let ws = "hh";
+    try {
+      ws = localStorage.getItem(WORKSPACE_KEY) || "hh";
+    } catch (_) {}
+    applyWorkspace(ws);
+    document.querySelectorAll("[data-workspace-set]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        applyWorkspace(btn.getAttribute("data-workspace-set"));
+        refreshAll();
+      });
+    });
+    document.querySelectorAll("[data-li-tab]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        applyLiTab(btn.getAttribute("data-li-tab"));
+      });
+    });
+  }
+
   async function refreshStatus() {
     const st = await api(`/api/status?profile=${encodeURIComponent(profile())}`);
     const status = st.status || "idle";
+    lastStatusCode = status;
+    lastHasSession = !!st.has_session;
+    lastHasLiSession = !!st.has_linkedin_session;
     statusPill.dataset.status = status;
-    statusLabel.textContent = status;
+    statusLabel.textContent = statusDisplay(status);
     statusMessage.textContent = st.message || "";
     setBusy(!!st.busy);
 
@@ -102,7 +284,65 @@
     $("stLow").textContent = s.low ?? 0;
     $("stQueued").textContent = s.queued ?? 0;
     $("stApplied").textContent = s.applied ?? 0;
-    $("stSession").textContent = st.has_session ? "ok" : "нет";
+    $("stSession").textContent = st.has_session
+      ? t("stats.session_ok")
+      : t("stats.session_no");
+
+    const li = st.linkedin_stats || {};
+    const by = li.by_status || {};
+    if ($("stLiContacts")) $("stLiContacts").textContent = li.total ?? 0;
+    if ($("stLiConnected")) $("stLiConnected").textContent = by.connected ?? 0;
+    if ($("stLiPending")) $("stLiPending").textContent = by.pending ?? 0;
+    if ($("stLiVacancies")) {
+      $("stLiVacancies").textContent = (li.vacancies && li.vacancies.total) || 0;
+    }
+    if ($("stLiSession")) {
+      $("stLiSession").textContent = st.has_linkedin_session
+        ? t("stats.session_ok")
+        : t("stats.session_no");
+    }
+
+    if (st.notifications) showNotifications(st.notifications);
+    showLastAlert(st.last_alert);
+
+    const sched = st.report_schedule;
+    const hint = $("reportScheduleHint");
+    if (hint && sched) {
+      if (sched.enabled) {
+        const when = sched.next_run_iso
+          ? sched.next_run_iso
+          : `${String(sched.hour).padStart(2, "0")}:${String(sched.minute).padStart(2, "0")} ${sched.timezone || ""}`;
+        const last = sched.last_run_at
+          ? new Date(sched.last_run_at * 1000).toLocaleString()
+          : (sched.last_file && sched.last_file.created_at
+              ? new Date(sched.last_file.created_at * 1000).toLocaleString()
+              : "—");
+        hint.textContent = t("report.schedule.hint", { when, last });
+      } else {
+        hint.textContent = t("report.schedule.off");
+      }
+    }
+
+    const parseSched = st.parse_schedule;
+    const parseHint = $("parseScheduleHint");
+    if (parseHint && parseSched) {
+      if (parseSched.enabled) {
+        const when = parseSched.next_run_iso
+          ? parseSched.next_run_iso
+          : (parseSched.times_display || "—");
+        const last = parseSched.last_run_at
+          ? new Date(parseSched.last_run_at * 1000).toLocaleString()
+          : "—";
+        parseHint.textContent = t("parse.schedule.hint", {
+          times: parseSched.times_display || "12:00,00:00",
+          tz: parseSched.timezone || "Europe/Minsk",
+          when,
+          last,
+        });
+      } else {
+        parseHint.textContent = t("parse.schedule.off");
+      }
+    }
 
     if (st.remote_browser && typeof st.remote_browser.enabled === "boolean") {
       applyRemoteUiFlag(st.remote_browser.enabled);
@@ -110,7 +350,11 @@
   }
 
   function explainButtonHtml(vacancyId) {
-    return `<button type="button" class="ghost touch btn-explain" data-vacancy-id="${vacancyId}">Explain</button>`;
+    return (
+      `<button type="button" class="ghost touch btn-explain" data-vacancy-id="${vacancyId}">` +
+      `<svg class="ico" aria-hidden="true"><use href="#i-spark"/></svg>` +
+      `<span class="btn-label" data-i18n="vac.explain">${t("vac.explain")}</span></button>`
+    );
   }
 
   async function refreshVacancies() {
@@ -166,7 +410,7 @@
 
   async function openExplain(vacancyId) {
     explainModal.hidden = false;
-    $("explainText").textContent = "Считаем веса…";
+    $("explainText").textContent = t("explain.loading");
     $("explainMeta").textContent = "";
     $("explainPos").innerHTML = "";
     $("explainNeg").innerHTML = "";
@@ -223,10 +467,70 @@
     if (e.target === explainModal) explainModal.hidden = true;
   });
 
+  async function refreshLiContacts() {
+    const data = await api(
+      `/api/linkedin/contacts?profile=${encodeURIComponent(profile())}&limit=80`
+    );
+    const body = $("liContactBody");
+    if (!body) return;
+    body.innerHTML = "";
+    (data.contacts || []).forEach((c) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${escapeHtml(c.status || "")}</td>
+        <td><a href="${escapeHtml(c.url)}" target="_blank" rel="noopener">${escapeHtml(c.name || c.url)}</a></td>
+        <td>${escapeHtml(c.query || "")}</td>`;
+      body.appendChild(tr);
+    });
+  }
+
+  async function refreshLiVacancies() {
+    const data = await api(
+      `/api/linkedin/vacancies?profile=${encodeURIComponent(profile())}&limit=80`
+    );
+    const body = $("liVacBody");
+    if (!body) return;
+    body.innerHTML = "";
+    (data.vacancies || []).forEach((v) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><a href="${escapeHtml(v.url)}" target="_blank" rel="noopener">${escapeHtml(v.title || v.url)}</a></td>
+        <td>${escapeHtml(v.location || "")}</td>
+        <td>${escapeHtml(v.query || "")}</td>`;
+      body.appendChild(tr);
+    });
+  }
+
+  async function refreshLiLogs() {
+    const data = await api(`/api/logs?profile=${encodeURIComponent(profile())}&limit=50`);
+    const list = $("liLogList");
+    if (!list) return;
+    list.innerHTML = "";
+    (data.logs || []).forEach((l) => {
+      const li = document.createElement("li");
+      const lvl = (l.level || "info").toLowerCase();
+      li.className = `lvl-${lvl}`;
+      if (lvl === "error") li.classList.add("err");
+      li.innerHTML =
+        `<span class="t">${escapeHtml(l.when || "")}</span> ` +
+        `<span class="ev">${escapeHtml(l.event || "")}</span> ` +
+        highlightLogMessage(l.message || "");
+      list.appendChild(li);
+    });
+  }
+
   async function refreshAll() {
     try {
       await refreshStatus();
-      await Promise.all([refreshVacancies(), refreshLogs()]);
+      if (workspace === "linkedin") {
+        await Promise.all([
+          refreshLiContacts(),
+          refreshLiVacancies(),
+          refreshLiLogs(),
+        ]);
+      } else {
+        await Promise.all([refreshVacancies(), refreshLogs()]);
+      }
     } catch (e) {
       statusMessage.textContent = String(e.message || e);
     }
@@ -292,7 +596,7 @@
   function openRemoteModal() {
     remoteModal.hidden = false;
     remoteOverlay.hidden = false;
-    remoteOverlay.textContent = "Подключение…";
+    setRemoteOverlay("remote.connecting", true);
     remoteUrl.textContent = "";
     remoteCanvas.focus();
   }
@@ -305,18 +609,21 @@
     }
   }
 
-  async function startRemoteViewer() {
+  async function startRemoteViewer(wsName) {
     openRemoteModal();
     try {
-      const started = await post("/api/remote-browser/start");
+      const started = await post("/api/remote-browser/start", {
+        profile: profile(),
+        workspace: wsName || workspace || "hh",
+      });
       if (started && started.error) {
-        remoteOverlay.textContent = started.error;
+        setRemoteOverlay(started.error, false);
         statusMessage.textContent = started.error;
         return;
       }
       if (started && started.viewport) viewport = started.viewport;
     } catch (e) {
-      remoteOverlay.textContent = String(e.message || e);
+      setRemoteOverlay(String(e.message || e), false);
       return;
     }
 
@@ -326,7 +633,7 @@
 
     ws = new WebSocket(wsUrl());
     ws.onopen = () => {
-      remoteOverlay.textContent = "Ожидание кадров…";
+      setRemoteOverlay("remote.waiting_frames", true);
       remoteCanvas.focus();
     };
     ws.onmessage = (ev) => {
@@ -339,12 +646,13 @@
       }
       if (msg.type === "error") {
         remoteOverlay.hidden = false;
-        remoteOverlay.textContent = msg.error || "error";
+        setRemoteOverlay(msg.error || "error", false);
         return;
       }
       if (msg.type === "closed") {
         remoteOverlay.hidden = false;
-        remoteOverlay.textContent = msg.message || "закрыто";
+        if (msg.message) setRemoteOverlay(msg.message, false);
+        else setRemoteOverlay("remote.closed", true);
         return;
       }
       if (msg.type === "frame" && msg.data) {
@@ -358,12 +666,12 @@
     };
     ws.onerror = () => {
       remoteOverlay.hidden = false;
-      remoteOverlay.textContent = "WebSocket error";
+      setRemoteOverlay("remote.ws_error", true);
     };
     ws.onclose = () => {
       if (!remoteModal.hidden) {
         remoteOverlay.hidden = false;
-        remoteOverlay.textContent = "Соединение закрыто";
+        setRemoteOverlay("remote.conn_closed", true);
       }
     };
   }
@@ -424,16 +732,97 @@
 
   $("btnLogin").onclick = async () => {
     if (remoteEnabled) {
-      await withAction(() => post("/api/login"));
-      await startRemoteViewer();
+      await withAction(() =>
+        post("/api/login", { profile: profile(), workspace: "hh" })
+      );
+      await startRemoteViewer("hh");
       return;
     }
     await withAction(() => post("/api/login"));
   };
   $("btnRemoteBrowser").onclick = async () => {
-    await withAction(() => post("/api/remote-browser/start"));
-    await startRemoteViewer();
+    await withAction(() =>
+      post("/api/remote-browser/start", {
+        profile: profile(),
+        workspace: "hh",
+      })
+    );
+    await startRemoteViewer("hh");
   };
+
+  if ($("btnLiLogin")) {
+    $("btnLiLogin").onclick = async () => {
+      if (remoteEnabled) {
+        await withAction(() => post("/api/linkedin/login"));
+        await startRemoteViewer("linkedin");
+        return;
+      }
+      await withAction(() => post("/api/linkedin/login"));
+    };
+  }
+  if ($("btnLiConfirm")) {
+    $("btnLiConfirm").onclick = () =>
+      withAction(() =>
+        remoteEnabled && !remoteModal.hidden
+          ? post("/api/remote-browser/save")
+          : post("/api/login/confirm")
+      );
+  }
+  if ($("btnLiNetwork")) {
+    $("btnLiNetwork").onclick = () =>
+      withAction(() => post("/api/linkedin/network"));
+  }
+  if ($("btnLiVacancies")) {
+    $("btnLiVacancies").onclick = () =>
+      withAction(() => post("/api/linkedin/vacancies/search"));
+  }
+  if ($("btnLiStop")) {
+    $("btnLiStop").onclick = async () => {
+      if (remoteEnabled && (!remoteModal.hidden || (ws && ws.readyState === WebSocket.OPEN))) {
+        await closeRemoteViewer(true);
+        return;
+      }
+      await withAction(() => post("/api/stop"));
+    };
+  }
+  if ($("btnLiCriteria")) {
+    $("btnLiCriteria").onclick = async () => {
+      try {
+        const data = await api("/api/linkedin/launch");
+        $("liLaunchText").value = JSON.stringify(data.launch || {}, null, 2);
+        if (data.notifications) showNotifications(data.notifications);
+        $("liLaunchMessage").textContent = "";
+      } catch (e) {
+        $("liLaunchMessage").textContent = String(e.message || e);
+      }
+      $("liLaunchModal").hidden = false;
+    };
+  }
+  if ($("btnLiLaunchClose")) {
+    $("btnLiLaunchClose").onclick = () => {
+      $("liLaunchModal").hidden = true;
+    };
+  }
+  if ($("btnLiLaunchSave")) {
+    $("btnLiLaunchSave").onclick = async () => {
+      try {
+        const launch = JSON.parse($("liLaunchText").value || "{}");
+        const r = await api("/api/linkedin/launch", {
+          method: "POST",
+          body: JSON.stringify({ launch }),
+        });
+        if (!r.ok) {
+          $("liLaunchMessage").textContent = r.error || t("launch.err.save");
+          return;
+        }
+        $("liLaunchMessage").textContent = t("launch.saved", { path: r.path });
+        $("liLaunchModal").hidden = true;
+        await refreshAll();
+      } catch (e) {
+        $("liLaunchMessage").textContent = String(e.message || e);
+      }
+    };
+  }
   $("btnConfirm").onclick = () =>
     withAction(() =>
       remoteEnabled && !remoteModal.hidden
@@ -444,6 +833,13 @@
   $("btnRemoteClose").onclick = () => closeRemoteViewer(true);
   $("btnSearch").onclick = () => withAction(() => post("/api/search"));
   $("btnApply").onclick = () => withAction(() => post("/api/apply"));
+  $("btnDownloadReport").onclick = () => {
+    const kind = ($("reportKind") && $("reportKind").value) || "work";
+    const url =
+      `/api/reports/${encodeURIComponent(kind)}.pdf` +
+      `?profile=${encodeURIComponent(profile())}`;
+    window.location.href = url;
+  };
   $("btnStop").onclick = async () => {
     if (remoteEnabled && (!remoteModal.hidden || (ws && ws.readyState === WebSocket.OPEN))) {
       await closeRemoteViewer(true);
@@ -452,6 +848,111 @@
     await withAction(() => post("/api/stop"));
   };
   profileSelect.onchange = () => refreshAll();
+
+  function setLaunchMessage(text, ok) {
+    const el = $("launchMessage");
+    el.textContent = text || "";
+    el.classList.toggle("ok", !!ok);
+    el.classList.toggle("err", !ok && !!text);
+  }
+
+  function updateLaunchMeta(launch) {
+    lastLaunch = launch || null;
+    launchLoaded = true;
+    if (!launch) {
+      $("launchMeta").textContent = t("launch.meta.empty");
+      return;
+    }
+    const loc = launch.location || {};
+    const city = loc.city || loc.country || "?";
+    const sal =
+      launch.salary_min_usd != null || launch.salary_max_usd != null
+        ? `$${launch.salary_min_usd ?? "?"}-${launch.salary_max_usd ?? "?"}`
+        : "—";
+    const q = (launch.queries || []).length;
+    $("launchMeta").textContent =
+      `${launch.site || "?"} · ${city} · ${sal} · queries=${q}`;
+  }
+
+  async function refreshLaunch() {
+    const data = await api("/api/launch");
+    if (data.strict_text) $("launchText").value = data.strict_text;
+    updateLaunchMeta(data.launch);
+    return data;
+  }
+
+  function openLaunchModal() {
+    launchModal.hidden = false;
+    setLaunchMessage("", false);
+    const ta = $("launchText");
+    if (ta) {
+      ta.focus();
+      const len = ta.value.length;
+      try { ta.setSelectionRange(len, len); } catch (_) {}
+    }
+  }
+
+  function closeLaunchModal() {
+    launchModal.hidden = true;
+  }
+
+  $("btnLaunchCriteria").onclick = async () => {
+    try {
+      await refreshLaunch();
+    } catch (_) {}
+    openLaunchModal();
+  };
+  $("btnLaunchClose").onclick = () => closeLaunchModal();
+  launchModal.addEventListener("click", (e) => {
+    if (e.target === launchModal) closeLaunchModal();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && launchModal && !launchModal.hidden) {
+      closeLaunchModal();
+    }
+  });
+
+  $("btnLaunchValidate").onclick = async () => {
+    try {
+      const r = await api("/api/launch/validate", {
+        method: "POST",
+        body: JSON.stringify({ text: $("launchText").value }),
+      });
+      if (!r.ok) {
+        setLaunchMessage(r.error || t("launch.err.validate"), false);
+        return;
+      }
+      setLaunchMessage(t("launch.ok"), true);
+      updateLaunchMeta(r.launch);
+    } catch (e) {
+      setLaunchMessage(String(e.message || e), false);
+    }
+  };
+
+  $("btnLaunchSave").onclick = async () => {
+    try {
+      const r = await api("/api/launch/text", {
+        method: "POST",
+        body: JSON.stringify({ text: $("launchText").value }),
+      });
+      if (!r.ok) {
+        setLaunchMessage(r.error || t("launch.err.save"), false);
+        return;
+      }
+      if (r.strict_text) $("launchText").value = r.strict_text;
+      updateLaunchMeta(r.launch);
+      setLaunchMessage(t("launch.saved", { path: r.path }), true);
+      const cfg = await api("/api/config");
+      $("cfgHint").textContent =
+        `${cfg.app_name} · ${cfg.base_url}` +
+        ` · area=${cfg.search_area}` +
+        ` · remote/hybrid=${cfg.require_remote_or_hybrid}` +
+        ` · launch=on`;
+      closeLaunchModal();
+    } catch (e) {
+      setLaunchMessage(String(e.message || e), false);
+    }
+  };
 
   $("btnAddProfile").onclick = async () => {
     const name = ($("newProfile").value || "").trim();
@@ -466,15 +967,42 @@
     await refreshAll();
   };
 
+  window.addEventListener("aa:lang", () => {
+    syncLoginLabel();
+    statusLabel.textContent = statusDisplay(lastStatusCode);
+    $("stSession").textContent = lastHasSession
+      ? t("stats.session_ok")
+      : t("stats.session_no");
+    if (!statusMessage.textContent.trim()) {
+      statusMessage.textContent = t("status.ready");
+    }
+    if (launchLoaded) updateLaunchMeta(lastLaunch);
+    if (remoteOverlayKey) {
+      remoteOverlay.textContent = t(remoteOverlayKey);
+    }
+    document.querySelectorAll('[data-i18n="vac.explain"]').forEach((el) => {
+      el.textContent = t("vac.explain");
+    });
+  });
+
+  initTheme();
+  initWorkspace();
+  if (window.AA_I18N) window.AA_I18N.initLang();
+  statusMessage.textContent = t("status.ready");
+
   (async () => {
     try {
       const cfg = await api("/api/config");
       applyRemoteUiFlag(!!cfg.enable_remote_browser);
+      if (cfg.notifications) showNotifications(cfg.notifications);
       $("cfgHint").textContent =
         `${cfg.app_name} · ${cfg.base_url}` +
+        ` · area=${cfg.search_area || "-"}` +
         ` · remote/hybrid=${cfg.require_remote_or_hybrid}` +
         ` · weights=config/weights.json` +
-        ` · remote_browser=${cfg.enable_remote_browser ? "on" : "off"}`;
+        ` · remote_browser=${cfg.enable_remote_browser ? "on" : "off"}` +
+        ` · workspaces=hh+linkedin`;
+      await refreshLaunch();
     } catch (_) {}
     await refreshProfiles();
     await refreshAll();

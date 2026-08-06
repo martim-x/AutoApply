@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 from typing import Any, Callable
 
+from app.application.alerts import AlertService, get_alert_service
 from app.domain.enums import JobStatus
 from app.domain.ports import UnitOfWork
 from app.infrastructure.browser.gateway import PlaywrightBrowserGateway, safe_run
@@ -25,10 +26,19 @@ class StopFlag:
 
 
 class JobRunner:
-    def __init__(self, uow: UnitOfWork, settings: Settings) -> None:
+    def __init__(
+        self,
+        uow: UnitOfWork,
+        settings: Settings,
+        alerts: AlertService | None = None,
+    ) -> None:
         self.uow = uow
         self.settings = settings
-        self.gateway = PlaywrightBrowserGateway(uow, settings)
+        self.alerts = alerts or get_alert_service(settings)
+        self.gateway = PlaywrightBrowserGateway(uow, settings, alerts=self.alerts)
+        from app.infrastructure.browser.linkedin_gateway import LinkedInBrowserGateway
+
+        self.linkedin = LinkedInBrowserGateway(uow, settings, alerts=self.alerts)
         self._lock = threading.Lock()
         self._threads: dict[str, threading.Thread] = {}
         self._stops: dict[str, StopFlag] = {}
@@ -70,7 +80,12 @@ class JobRunner:
 
             def runner() -> None:
                 try:
-                    safe_run(lambda: target(profile, stop), self.uow, profile)
+                    safe_run(
+                        lambda: target(profile, stop),
+                        self.uow,
+                        profile,
+                        alerts=self.alerts,
+                    )
                 finally:
                     with self._lock:
                         self._threads.pop(profile, None)
@@ -88,3 +103,12 @@ class JobRunner:
 
     def start_apply(self, profile: str) -> dict[str, Any]:
         return self._spawn(profile, self.gateway.run_apply)
+
+    def start_linkedin_login(self, profile: str) -> dict[str, Any]:
+        return self._spawn(profile, self.linkedin.run_login)
+
+    def start_linkedin_network(self, profile: str) -> dict[str, Any]:
+        return self._spawn(profile, self.linkedin.run_network)
+
+    def start_linkedin_vacancies(self, profile: str) -> dict[str, Any]:
+        return self._spawn(profile, self.linkedin.run_vacancies)

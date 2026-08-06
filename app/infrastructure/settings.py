@@ -41,10 +41,14 @@ class Settings(BaseSettings):
     data_dir: Path = Field(default=ROOT / "data")
     sessions_dir: Path | None = Field(default=None)
     letter_path: Path = Field(default=ROOT / "letter_universal.txt")
+    launch_path: Path = Field(default=ROOT / "config" / "launch.json")
+    linkedin_launch_path: Path = Field(
+        default=ROOT / "config" / "linkedin.launch.json"
+    )
 
-    # Site / search
+    # Site / search (defaults; override via config/launch.json)
     base_url: str = "https://rabota.by"
-    search_area: str = "16"  # BY
+    search_area: str = "16"  # BY / Minsk country fallback
     search_queries: str = (
         "python-разработчик,python-developer,python разработчик,python developer"
     )
@@ -80,7 +84,69 @@ class Settings(BaseSettings):
     api_key: str | None = None
     db_password: str | None = None
 
-    @field_validator("data_dir", "letter_path", mode="before")
+    # Admin UI for editing .env (disabled unless user+password set)
+    admin_user: str | None = None
+    admin_password: str | None = None
+    admin_secret: str | None = None
+
+    # Scheduled PDF reports (in-process; one Railway service)
+    report_schedule_enabled: bool = False
+    report_schedule_timezone: str = "Europe/Minsk"
+    report_schedule_hour: int = 4
+    report_schedule_minute: int = 0
+    # Optional cron "m h * * *" — if set, overrides hour/minute
+    report_schedule_cron: str | None = None
+    report_schedule_kind: str = "work"
+    report_schedule_profile: str = "default"
+
+    # Scheduled vacancy parsing (noon + midnight by default; separate from PDF)
+    # Off locally for safety; enable on Railway when sessions exist.
+    parse_schedule_enabled: bool = False
+    parse_schedule_timezone: str = "Europe/Minsk"
+    # Comma-separated HH:MM (or bare hours): "12:00,00:00"
+    parse_schedule_times: str = "12:00,00:00"
+    parse_schedule_profile: str = "default"
+    # Early-stop when SERP is newest-first: N consecutive known vacancies
+    parse_early_stop_enabled: bool = True
+    parse_old_streak_stop: int = 5
+
+    # SMTP alerts (sync smtplib; short timeouts — one Railway process)
+    alert_smtp_enabled: bool = False
+    alert_smtp_host: str = ""
+    alert_smtp_port: int = 587
+    alert_smtp_user: str = ""
+    alert_smtp_password: str = ""
+    alert_smtp_from: str = ""
+    alert_smtp_to: str = ""
+    alert_smtp_tls: bool = True
+    alert_on_error: bool = True
+    alert_on_captcha: bool = True
+    alert_on_parse_fail: bool = True
+    # Max 1 identical (profile+event+message) email per window
+    alert_rate_limit_seconds: int = 600
+
+    def admin_enabled(self) -> bool:
+        user = (self.admin_user or "").strip()
+        password = self.admin_password or ""
+        return bool(user and password)
+
+    def session_secret(self) -> str:
+        """Secret for signed admin cookies; prefer ADMIN_SECRET."""
+        if self.admin_secret and self.admin_secret.strip():
+            return self.admin_secret.strip()
+        # Deterministic fallback so sessions survive restart when secret unset
+        # (still requires ADMIN_USER/PASSWORD; not for public multi-tenant use).
+        user = (self.admin_user or "").strip()
+        password = self.admin_password or ""
+        return f"rabota-apply-admin:{user}:{password}"
+
+    @field_validator(
+        "data_dir",
+        "letter_path",
+        "launch_path",
+        "linkedin_launch_path",
+        mode="before",
+    )
     @classmethod
     def _as_path(cls, v: Any) -> Path:
         return Path(v) if not isinstance(v, Path) else v
@@ -89,9 +155,14 @@ class Settings(BaseSettings):
     def resolved_sessions_dir(self) -> Path:
         return self.sessions_dir or (self.data_dir / "sessions")
 
+    @property
+    def reports_dir(self) -> Path:
+        return self.data_dir / "reports"
+
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.resolved_sessions_dir.mkdir(parents=True, exist_ok=True)
+        self.reports_dir.mkdir(parents=True, exist_ok=True)
 
     def sqlite_path(self) -> Path | None:
         url = self.database_url
@@ -123,6 +194,174 @@ class Settings(BaseSettings):
     def state_path(self, profile: str) -> Path:
         self.ensure_dirs()
         return self.resolved_sessions_dir / f"{profile}.storage.json"
+
+    def linkedin_state_path(self, profile: str) -> Path:
+        """Separate storage_state for LinkedIn (does not overwrite HH session)."""
+        self.ensure_dirs()
+        return self.resolved_sessions_dir / f"{profile}.linkedin.storage.json"
+
+    def parse_report_schedule(self) -> dict[str, Any]:
+        """
+        Resolve schedule to hour/minute (+ timezone).
+        Supports REPORT_SCHEDULE_CRON as 'm h * * *' (minute hour only).
+        """
+        hour = int(self.report_schedule_hour)
+        minute = int(self.report_schedule_minute)
+        cron = (self.report_schedule_cron or "").strip()
+        notes: list[str] = []
+        if cron:
+            parts = cron.split()
+            if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+                minute = int(parts[0])
+                hour = int(parts[1])
+            else:
+                notes.append(
+                    f"using default hour/minute because REPORT_SCHEDULE_CRON "
+                    f"unparsed: {cron!r}"
+                )
+        hour = max(0, min(23, hour))
+        minute = max(0, min(59, minute))
+        return {
+            "enabled": bool(self.report_schedule_enabled),
+            "timezone": self.report_schedule_timezone or "Europe/Minsk",
+            "hour": hour,
+            "minute": minute,
+            "cron": cron or None,
+            "kind": (self.report_schedule_kind or "work").strip().lower() or "work",
+            "profile": (self.report_schedule_profile or "default").strip() or "default",
+            "notifications": notes,
+        }
+
+    def parse_parse_schedule(self) -> dict[str, Any]:
+        """
+        Resolve vacancy-parse schedule (multi-fire times + early-stop knobs).
+        Soft-defaults missing/invalid PARSE_SCHEDULE_TIMES → 12:00,00:00.
+        """
+        notes: list[str] = []
+        times, time_notes = parse_schedule_times_list(self.parse_schedule_times)
+        notes.extend(time_notes)
+        streak = int(self.parse_old_streak_stop)
+        if streak < 1:
+            notes.append(
+                f"using default PARSE_OLD_STREAK_STOP=5 because invalid ({streak})"
+            )
+            streak = 5
+        tz = (self.parse_schedule_timezone or "").strip() or "Europe/Minsk"
+        if not (self.parse_schedule_timezone or "").strip():
+            notes.append(
+                "using default PARSE_SCHEDULE_TIMEZONE=Europe/Minsk because missing"
+            )
+        profile = (self.parse_schedule_profile or "default").strip() or "default"
+        return {
+            "enabled": bool(self.parse_schedule_enabled),
+            "timezone": tz,
+            "times": times,
+            "times_display": ",".join(f"{h:02d}:{m:02d}" for h, m in times),
+            "profile": profile,
+            "early_stop_enabled": bool(self.parse_early_stop_enabled),
+            "old_streak_stop": streak,
+            # Prefer both HH + LinkedIn when sessions exist (documented choice)
+            "workspaces": ["hh", "linkedin"],
+            "notifications": notes,
+        }
+
+    def parse_alert_config(self) -> dict[str, Any]:
+        """
+        Resolve SMTP alert knobs with soft-default notifications when
+        enabled but incomplete (host/to missing).
+        """
+        notes: list[str] = []
+        enabled = bool(self.alert_smtp_enabled)
+        host = (self.alert_smtp_host or "").strip()
+        mail_to = (self.alert_smtp_to or "").strip()
+        mail_from = (self.alert_smtp_from or "").strip()
+        user = (self.alert_smtp_user or "").strip()
+        port = int(self.alert_smtp_port or 587)
+        if port < 1 or port > 65535:
+            notes.append(
+                f"using default ALERT_SMTP_PORT=587 because invalid ({port})"
+            )
+            port = 587
+        window = int(self.alert_rate_limit_seconds or 600)
+        if window < 0:
+            notes.append(
+                "using default ALERT_RATE_LIMIT_SECONDS=600 because invalid"
+            )
+            window = 600
+        if enabled and not host:
+            notes.append(
+                "ALERT_SMTP_ENABLED but ALERT_SMTP_HOST empty — alerts skipped"
+            )
+        if enabled and not mail_to:
+            notes.append(
+                "ALERT_SMTP_ENABLED but ALERT_SMTP_TO empty — alerts skipped"
+            )
+        if enabled and not mail_from and not user:
+            notes.append(
+                "ALERT_SMTP_FROM empty — will fall back to ALERT_SMTP_USER/TO"
+            )
+        return {
+            "enabled": enabled,
+            "host": host,
+            "port": port,
+            "user": user,
+            "from": mail_from or user or mail_to,
+            "to": mail_to,
+            "tls": bool(self.alert_smtp_tls),
+            "on_error": bool(self.alert_on_error),
+            "on_captcha": bool(self.alert_on_captcha),
+            "on_parse_fail": bool(self.alert_on_parse_fail),
+            "rate_limit_seconds": window,
+            "notifications": notes,
+        }
+
+
+def parse_schedule_times_list(
+    raw: str | None,
+) -> tuple[list[tuple[int, int]], list[str]]:
+    """Parse '12:00,00:00' or '12,0' into sorted unique (hour, minute) list."""
+    notes: list[str] = []
+    default = [(0, 0), (12, 0)]
+    text = (raw or "").strip()
+    if not text:
+        notes.append(
+            "using default PARSE_SCHEDULE_TIMES=12:00,00:00 because missing"
+        )
+        return default, notes
+
+    seen: set[tuple[int, int]] = set()
+    out: list[tuple[int, int]] = []
+    for part in text.replace(";", ",").split(","):
+        token = part.strip()
+        if not token:
+            continue
+        try:
+            if ":" in token:
+                hs, ms = token.split(":", 1)
+                hour = int(hs.strip())
+                minute = int(ms.strip())
+            else:
+                hour = int(token)
+                minute = 0
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                raise ValueError("out of range")
+        except ValueError:
+            notes.append(f"skipping invalid PARSE_SCHEDULE_TIMES token {token!r}")
+            continue
+        key = (hour, minute)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(key)
+
+    if not out:
+        notes.append(
+            "using default PARSE_SCHEDULE_TIMES=12:00,00:00 because invalid"
+        )
+        return default, notes
+
+    out.sort(key=lambda t: (t[0], t[1]))
+    return out, notes
 
 
 @lru_cache

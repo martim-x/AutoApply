@@ -10,13 +10,33 @@ services:
       DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/rabota_apply.sqlite}
       DATA_DIR: /app/data
       LETTER_PATH: /app/letter_universal.txt
+      LAUNCH_PATH: /app/config/launch.json
+      LINKEDIN_LAUNCH_PATH: /app/config/linkedin.launch.json
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
       HEADLESS: ${HEADLESS:-true}
       ENABLE_REMOTE_BROWSER: ${ENABLE_REMOTE_BROWSER:-true}
       HOST: 0.0.0.0
       PORT: 8080
+      REPORT_SCHEDULE_ENABLED: ${REPORT_SCHEDULE_ENABLED:-false}
+      REPORT_SCHEDULE_TIMEZONE: ${REPORT_SCHEDULE_TIMEZONE:-Europe/Minsk}
+      REPORT_SCHEDULE_HOUR: ${REPORT_SCHEDULE_HOUR:-4}
+      REPORT_SCHEDULE_MINUTE: ${REPORT_SCHEDULE_MINUTE:-0}
+      PARSE_SCHEDULE_ENABLED: ${PARSE_SCHEDULE_ENABLED:-false}
+      PARSE_SCHEDULE_TIMEZONE: ${PARSE_SCHEDULE_TIMEZONE:-Europe/Minsk}
+      PARSE_SCHEDULE_TIMES: ${PARSE_SCHEDULE_TIMES:-12:00,00:00}
     volumes:
+      # Persist sqlite + Playwright sessions + PDF reports
       - ./data:/app/data
       - ./letter_universal.txt:/app/letter_universal.txt:ro
+      # So /admin can edit .env and changes survive restart
+      - ./.env:/app/.env
+      - ./config:/app/config
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
     # For visible browser on Linux host with X11 (optional):
     # environment:
     #   HEADLESS: "false"

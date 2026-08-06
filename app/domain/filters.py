@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from .entities import FilterResult
 
@@ -62,6 +63,14 @@ def has_python_signal(title: str = "", text: str = "") -> bool:
     return bool(PYTHON_RE.search(f"{title or ''}\n{text or ''}"))
 
 
+def _location_blocked(title: str, description: str, location: Any) -> bool:
+    """Strict mode: drop vacancies that clearly name another city."""
+    from app.domain.launch_profile import location_match_score
+
+    code, _w = location_match_score(title, description, location)
+    return code == "location_other_city"
+
+
 def evaluate_vacancy(
     url: str,
     title: str = "",
@@ -70,6 +79,8 @@ def evaluate_vacancy(
     require_remote_or_hybrid: bool = True,
     skip_gov: bool = True,
     require_python_keywords: bool = False,
+    location: Any | None = None,
+    launch: Any | None = None,
 ) -> FilterResult:
     blob = f"{title}\n{description}"
 
@@ -85,5 +96,22 @@ def evaluate_vacancy(
             return FilterResult(False, "filtered:office")
         if not remote_ok:
             return FilterResult(False, "filtered:office")
+
+    loc = location or (getattr(launch, "location", None) if launch else None)
+    if loc is not None and getattr(loc, "strict", False):
+        if description and _location_blocked(title, description, loc):
+            return FilterResult(False, "filtered:location")
+
+    if launch is not None and getattr(launch, "salary_strict", False):
+        from app.domain.launch_profile import salary_match_score
+
+        code, _w = salary_match_score(
+            title,
+            description,
+            salary_min_usd=getattr(launch, "salary_min_usd", None),
+            salary_max_usd=getattr(launch, "salary_max_usd", None),
+        )
+        if code == "salary_below":
+            return FilterResult(False, "filtered:salary")
 
     return FilterResult(True, "ok")

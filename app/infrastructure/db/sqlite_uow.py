@@ -9,7 +9,15 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-from app.domain.entities import Application, JobState, JournalEntry, Profile, Vacancy
+from app.domain.entities import (
+    Application,
+    JobState,
+    JournalEntry,
+    LinkedInContact,
+    LinkedInVacancyLink,
+    Profile,
+    Vacancy,
+)
 from app.domain.enums import ApplyStatus, FitCategory, JobStatus
 
 
@@ -22,6 +30,9 @@ class SqliteUnitOfWork:
         self.applications = _ApplicationRepo(self)
         self.jobs = _JobStateRepo(self)
         self.journal = _JournalRepo(self)
+        self.linkedin_contacts = _LinkedInContactRepo(self)
+        self.linkedin_vacancies = _LinkedInVacancyRepo(self)
+        self.report_files = _ReportFileRepo(self)
         self._init_schema()
 
     @contextmanager
@@ -66,6 +77,7 @@ class SqliteUnitOfWork:
                 );
                 CREATE INDEX IF NOT EXISTS idx_vac_profile ON vacancies(profile);
                 CREATE INDEX IF NOT EXISTS idx_vac_cat ON vacancies(category, score);
+                CREATE INDEX IF NOT EXISTS idx_vac_vid ON vacancies(profile, vacancy_id);
                 CREATE TABLE IF NOT EXISTS applications (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     profile TEXT NOT NULL,
@@ -102,6 +114,47 @@ class SqliteUnitOfWork:
                     key TEXT PRIMARY KEY,
                     value TEXT
                 );
+                CREATE TABLE IF NOT EXISTS linkedin_contacts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    profile TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    name TEXT,
+                    headline TEXT,
+                    location TEXT,
+                    query TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    error TEXT,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    UNIQUE(profile, url)
+                );
+                CREATE INDEX IF NOT EXISTS idx_li_contacts_profile
+                    ON linkedin_contacts(profile);
+                CREATE TABLE IF NOT EXISTS linkedin_vacancies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    profile TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    title TEXT,
+                    company TEXT,
+                    location TEXT,
+                    query TEXT,
+                    source TEXT NOT NULL DEFAULT 'linkedin',
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    UNIQUE(profile, url)
+                );
+                CREATE INDEX IF NOT EXISTS idx_li_vac_profile
+                    ON linkedin_vacancies(profile);
+                CREATE TABLE IF NOT EXISTS report_files (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    profile TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    scheduled INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS idx_report_files_ts
+                    ON report_files(created_at);
                 """
             )
         self.profiles.ensure_profile("default")
@@ -204,6 +257,65 @@ class _VacancyRepo:
                 (vacancy.profile, vacancy.url),
             ).fetchone()
             return int(row["id"])
+
+    def exists(
+        self,
+        profile: str,
+        *,
+        url: str | None = None,
+        vacancy_id: str | None = None,
+    ) -> bool:
+        url = (url or "").strip()
+        vacancy_id = (vacancy_id or "").strip()
+        if not url and not vacancy_id:
+            return False
+        with self._uow._conn() as c:
+            if url and vacancy_id:
+                row = c.execute(
+                    """
+                    SELECT 1 FROM vacancies
+                    WHERE profile=? AND (url=? OR vacancy_id=?)
+                    LIMIT 1
+                    """,
+                    (profile, url, vacancy_id),
+                ).fetchone()
+            elif vacancy_id:
+                row = c.execute(
+                    """
+                    SELECT 1 FROM vacancies
+                    WHERE profile=? AND vacancy_id=?
+                    LIMIT 1
+                    """,
+                    (profile, vacancy_id),
+                ).fetchone()
+            else:
+                row = c.execute(
+                    """
+                    SELECT 1 FROM vacancies
+                    WHERE profile=? AND url=?
+                    LIMIT 1
+                    """,
+                    (profile, url),
+                ).fetchone()
+        return row is not None
+
+    def known_keys(self, profile: str) -> tuple[set[str], set[str]]:
+        """Return (urls, vacancy_ids) already stored for profile."""
+        with self._uow._conn() as c:
+            rows = c.execute(
+                "SELECT url, vacancy_id FROM vacancies WHERE profile=?",
+                (profile,),
+            ).fetchall()
+        urls: set[str] = set()
+        ids: set[str] = set()
+        for r in rows:
+            u = (r["url"] or "").strip()
+            if u:
+                urls.add(u)
+            vid = (r["vacancy_id"] or "").strip()
+            if vid:
+                ids.add(vid)
+        return urls, ids
 
     def list_for_profile(
         self,
@@ -451,6 +563,253 @@ class _JournalRepo:
                 )
             )
         return out
+
+
+class _LinkedInContactRepo:
+    def __init__(self, uow: SqliteUnitOfWork) -> None:
+        self._uow = uow
+
+    def upsert(self, contact: LinkedInContact) -> int:
+        now = time.time()
+        with self._uow._conn() as c:
+            c.execute(
+                """
+                INSERT INTO linkedin_contacts(
+                    profile, url, name, headline, location, query,
+                    status, error, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(profile, url) DO UPDATE SET
+                    name=COALESCE(excluded.name, linkedin_contacts.name),
+                    headline=COALESCE(excluded.headline, linkedin_contacts.headline),
+                    location=COALESCE(excluded.location, linkedin_contacts.location),
+                    query=COALESCE(excluded.query, linkedin_contacts.query),
+                    status=excluded.status,
+                    error=excluded.error,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    contact.profile,
+                    contact.url,
+                    contact.name,
+                    contact.headline,
+                    contact.location,
+                    contact.query,
+                    contact.status,
+                    contact.error,
+                    now,
+                    now,
+                ),
+            )
+            row = c.execute(
+                "SELECT id FROM linkedin_contacts WHERE profile=? AND url=?",
+                (contact.profile, contact.url),
+            ).fetchone()
+            return int(row["id"])
+
+    def list_for_profile(self, profile: str, limit: int = 200) -> list[LinkedInContact]:
+        with self._uow._conn() as c:
+            rows = c.execute(
+                """
+                SELECT * FROM linkedin_contacts WHERE profile=?
+                ORDER BY updated_at DESC LIMIT ?
+                """,
+                (profile, limit),
+            ).fetchall()
+        return [_row_li_contact(r) for r in rows]
+
+    def stats(self, profile: str) -> dict[str, Any]:
+        with self._uow._conn() as c:
+            by_status = {
+                r["status"]: r["n"]
+                for r in c.execute(
+                    """
+                    SELECT status, COUNT(*) AS n FROM linkedin_contacts
+                    WHERE profile=? GROUP BY status
+                    """,
+                    (profile,),
+                )
+            }
+            total = c.execute(
+                "SELECT COUNT(*) AS n FROM linkedin_contacts WHERE profile=?",
+                (profile,),
+            ).fetchone()["n"]
+        return {"by_status": by_status, "total": int(total)}
+
+
+class _LinkedInVacancyRepo:
+    def __init__(self, uow: SqliteUnitOfWork) -> None:
+        self._uow = uow
+
+    def upsert(self, vacancy: LinkedInVacancyLink) -> int:
+        now = time.time()
+        with self._uow._conn() as c:
+            c.execute(
+                """
+                INSERT INTO linkedin_vacancies(
+                    profile, url, title, company, location, query, source,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(profile, url) DO UPDATE SET
+                    title=COALESCE(excluded.title, linkedin_vacancies.title),
+                    company=COALESCE(excluded.company, linkedin_vacancies.company),
+                    location=COALESCE(excluded.location, linkedin_vacancies.location),
+                    query=COALESCE(excluded.query, linkedin_vacancies.query),
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    vacancy.profile,
+                    vacancy.url,
+                    vacancy.title,
+                    vacancy.company,
+                    vacancy.location,
+                    vacancy.query,
+                    vacancy.source or "linkedin",
+                    now,
+                    now,
+                ),
+            )
+            row = c.execute(
+                "SELECT id FROM linkedin_vacancies WHERE profile=? AND url=?",
+                (vacancy.profile, vacancy.url),
+            ).fetchone()
+            return int(row["id"])
+
+    def exists(self, profile: str, *, url: str | None = None) -> bool:
+        url = (url or "").strip()
+        if not url:
+            return False
+        with self._uow._conn() as c:
+            row = c.execute(
+                """
+                SELECT 1 FROM linkedin_vacancies
+                WHERE profile=? AND url=?
+                LIMIT 1
+                """,
+                (profile, url),
+            ).fetchone()
+        return row is not None
+
+    def known_urls(self, profile: str) -> set[str]:
+        with self._uow._conn() as c:
+            rows = c.execute(
+                "SELECT url FROM linkedin_vacancies WHERE profile=?",
+                (profile,),
+            ).fetchall()
+        return {(r["url"] or "").strip() for r in rows if (r["url"] or "").strip()}
+
+    def list_for_profile(
+        self, profile: str, limit: int = 200
+    ) -> list[LinkedInVacancyLink]:
+        with self._uow._conn() as c:
+            rows = c.execute(
+                """
+                SELECT * FROM linkedin_vacancies WHERE profile=?
+                ORDER BY updated_at DESC LIMIT ?
+                """,
+                (profile, limit),
+            ).fetchall()
+        return [_row_li_vacancy(r) for r in rows]
+
+    def stats(self, profile: str) -> dict[str, Any]:
+        with self._uow._conn() as c:
+            total = c.execute(
+                "SELECT COUNT(*) AS n FROM linkedin_vacancies WHERE profile=?",
+                (profile,),
+            ).fetchone()["n"]
+        return {"total": int(total)}
+
+
+class _ReportFileRepo:
+    def __init__(self, uow: SqliteUnitOfWork) -> None:
+        self._uow = uow
+
+    def record(
+        self,
+        profile: str,
+        kind: str,
+        path: str,
+        *,
+        scheduled: bool = False,
+    ) -> int:
+        with self._uow._conn() as c:
+            cur = c.execute(
+                """
+                INSERT INTO report_files(profile, kind, path, created_at, scheduled)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (profile, kind, path, time.time(), int(scheduled)),
+            )
+            return int(cur.lastrowid)
+
+    def list_recent(self, limit: int = 30) -> list[dict[str, Any]]:
+        with self._uow._conn() as c:
+            rows = c.execute(
+                """
+                SELECT * FROM report_files ORDER BY created_at DESC LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "profile": r["profile"],
+                "kind": r["kind"],
+                "path": r["path"],
+                "created_at": r["created_at"],
+                "scheduled": bool(r["scheduled"]),
+            }
+            for r in rows
+        ]
+
+    def last_scheduled(self) -> dict[str, Any] | None:
+        with self._uow._conn() as c:
+            row = c.execute(
+                """
+                SELECT * FROM report_files WHERE scheduled=1
+                ORDER BY created_at DESC LIMIT 1
+                """
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "id": row["id"],
+            "profile": row["profile"],
+            "kind": row["kind"],
+            "path": row["path"],
+            "created_at": row["created_at"],
+            "scheduled": True,
+        }
+
+
+def _row_li_contact(r: sqlite3.Row) -> LinkedInContact:
+    return LinkedInContact(
+        id=r["id"],
+        profile=r["profile"],
+        url=r["url"],
+        name=r["name"] or "",
+        headline=r["headline"] or "",
+        location=r["location"] or "",
+        query=r["query"] or "",
+        status=r["status"] or "pending",
+        error=r["error"],
+        created_at=r["created_at"],
+        updated_at=r["updated_at"],
+    )
+
+
+def _row_li_vacancy(r: sqlite3.Row) -> LinkedInVacancyLink:
+    return LinkedInVacancyLink(
+        id=r["id"],
+        profile=r["profile"],
+        url=r["url"],
+        title=r["title"] or "",
+        company=r["company"] or "",
+        location=r["location"] or "",
+        query=r["query"] or "",
+        source=r["source"] or "linkedin",
+        created_at=r["created_at"],
+        updated_at=r["updated_at"],
+    )
 
 
 def _row_profile(r: sqlite3.Row) -> Profile:

@@ -1,0 +1,83 @@
+{
+  "sites": {
+    "rabota.by": {
+      "base_url": "https://rabota.by",
+      "label": "rabota.by (Беларусь)"
+    },
+    "hh.ru": {
+      "base_url": "https://hh.ru",
+      "label": "hh.ru (Россия)"
+    }
+  },
+  "locations": [
+    {
+      "country": "Беларусь",
+      "country_aliases": ["belarus", "беларусь", "белоруссия", "рб", "by"],
+      "country_area_id": "16",
+      "cities": [
+        {
+          "city": "Минск",
+          "aliases": ["минск", "minsk", "мск-минск"],
+          "area_id": "1002"
+        },
+        {
+          "city": "Гомель",
+          "aliases": ["гомель", "gomel", "homiel"],
+          "area_id": "2234"
+        },
+        {
+          "city": "Брест",
+          "aliases": ["брест", "brest"],
+          "area_id": "2231"
+        },
+        {
+          "city": "Гродно",
+          "aliases": ["гродно", "grodno", "hrodna"],
+          "area_id": "2232"
+        },
+        {
+          "city": "Витебск",
+          "aliases": ["витебск", "vitebsk"],
+          "area_id": "2233"
+        },
+        {
+          "city": "Могилёв",
+          "aliases": ["могилёв", "могилев", "mogilev"],
+          "area_id": "2235"
+        }
+      ]
+    },
+    {
+      "country": "Россия",
+      "country_aliases": ["россия", "russia", "рф", "ru", "russian federation"],
+      "country_area_id": "113",
+      "cities": [
+        {
+          "city": "Москва",
+          "aliases": ["москва", "moscow", "мск"],
+          "area_id": "1"
+        },
+        {
+          "city": "Санкт-Петербург",
+          "aliases": ["санкт-петербург", "петербург", "спб", "питер", "saint petersburg", "st petersburg"],
+          "area_id": "2"
+        },
+        {
+          "city": "Казань",
+          "aliases": ["казань", "kazan"],
+          "area_id": "88"
+        },
+        {
+          "city": "Новосибирск",
+          "aliases": ["новосибирск", "novosibirsk"],
+          "area_id": "4"
+        },
+        {
+          "city": "Екатеринбург",
+          "aliases": ["екатеринбург", "yekaterinburg", "екб"],
+          "area_id": "3"
+        }
+      ]
+    }
+  ]
+}

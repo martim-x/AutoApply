@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from app.application.alerts import get_alert_service
 from app.domain.enums import JobStatus
 from app.domain.ports import UnitOfWork
 from app.infrastructure.browser.job_runner import JobRunner
@@ -21,11 +22,16 @@ class AppService:
         settings: Settings,
         runner: JobRunner,
         remote_browser: RemoteBrowserManager | None = None,
+        scheduler: Any | None = None,
+        parse_scheduler: Any | None = None,
     ) -> None:
         self.uow = uow
         self.settings = settings
         self.runner = runner
         self.remote_browser = remote_browser or RemoteBrowserManager(uow, settings)
+        self.scheduler = scheduler
+        self.parse_scheduler = parse_scheduler
+        self._config_notifications: list[str] = []
 
     # ── LoginSession ──────────────────────────────────────────
 
@@ -35,7 +41,7 @@ class AppService:
         if self.settings.enable_remote_browser:
             if self.runner.is_busy(profile):
                 return {"ok": False, "error": "job already running"}
-            return self.remote_browser.start(profile)
+            return self.remote_browser.start(profile, workspace="hh")
         return self.runner.start_login(profile)
 
     def confirm_login(self, profile: str = "default") -> dict[str, Any]:
@@ -46,11 +52,14 @@ class AppService:
 
     # ── Remote browser (CDP screencast) ────────────────────────
 
-    def start_remote_browser(self, profile: str = "default") -> dict[str, Any]:
+    def start_remote_browser(
+        self, profile: str = "default", *, workspace: str = "hh"
+    ) -> dict[str, Any]:
         profile = self._profile(profile)
         if self.runner.is_busy(profile) and not self.remote_browser.get(profile):
             return {"ok": False, "error": "job already running"}
-        return self.remote_browser.start(profile)
+        ws = workspace if workspace in ("hh", "linkedin") else "hh"
+        return self.remote_browser.start(profile, workspace=ws)
 
     def save_remote_browser(self, profile: str = "default") -> dict[str, Any]:
         return self.remote_browser.save(self._profile(profile))
@@ -90,10 +99,30 @@ class AppService:
     # ── GetStats / status ─────────────────────────────────────
 
     def get_status(self, profile: str = "default") -> dict[str, Any]:
+        from pathlib import Path
+
         profile = self._profile(profile)
         st = self.uow.jobs.get_status(profile)
         stats = self.uow.stats(profile)
         sess = self.uow.profiles.get_session_path(profile)
+        hh_path = self.settings.state_path(profile)
+        li_path = self.settings.linkedin_state_path(profile)
+        has_hh = bool(
+            (sess and Path(sess).exists()) or hh_path.exists()
+        )
+        has_li = li_path.exists()
+        alerts = getattr(self.runner, "alerts", None) or get_alert_service(self.settings)
+        last_alert = getattr(alerts, "last_alert", None)
+        alert_notes = []
+        try:
+            alert_notes = list(alerts.config_notifications())
+        except Exception:
+            alert_notes = []
+        notifications = list(self._config_notifications) + alert_notes
+        if last_alert and last_alert.get("message"):
+            notifications = [
+                f"alert:{last_alert.get('event', '?')}: {last_alert['message']}"
+            ] + notifications
         return {
             "profile": profile,
             "status": st.status.value if isinstance(st.status, JobStatus) else st.status,
@@ -101,9 +130,20 @@ class AppService:
             "stats": {**st.stats, **stats},
             "updated_at": st.updated_at,
             "busy": self.runner.is_busy(profile) or bool(self.remote_browser.get(profile)),
-            "has_session": bool(sess and __import__("pathlib").Path(sess).exists()),
+            "has_session": has_hh,
+            "has_linkedin_session": has_li,
+            "linkedin_stats": {
+                **self.uow.linkedin_contacts.stats(profile),
+                "vacancies": self.uow.linkedin_vacancies.stats(profile),
+            },
             "statuses": [s.value for s in JobStatus],
             "remote_browser": self.remote_browser.status(profile),
+            "notifications": notifications,
+            "last_alert": last_alert,
+            "report_schedule": self.scheduler.status() if self.scheduler else None,
+            "parse_schedule": (
+                self.parse_scheduler.status() if self.parse_scheduler else None
+            ),
         }
 
     def get_stats(self, profile: str = "default") -> dict[str, Any]:
@@ -157,7 +197,17 @@ class AppService:
                 break
         if not vac:
             return {"ok": False, "error": "vacancy not found"}
-        data = explain_text(vac.title or "", vac.description or "", url=vac.url or "")
+        from app.domain.launch_profile import load_launch_profile
+
+        launch = load_launch_profile(self.settings.launch_path)
+        location = launch.location if launch else None
+        data = explain_text(
+            vac.title or "",
+            vac.description or "",
+            url=vac.url or "",
+            location=location,
+            launch=launch,
+        )
         data["ok"] = True
         data["vacancy_id"] = vac.id
         data["title"] = vac.title
@@ -205,22 +255,260 @@ class AppService:
         return {"name": p.name, "ok": True}
 
     def config_public(self) -> dict[str, Any]:
+        from app.domain.launch_profile import (
+            load_areas_catalog,
+            load_launch_profile_with_notes,
+        )
+        from app.domain.linkedin_profile import load_linkedin_launch
+
         s = self.settings
+        launch, launch_notes = load_launch_profile_with_notes(s.launch_path)
+        li, li_result = load_linkedin_launch(s.linkedin_launch_path)
+        notes = list(launch_notes) + list(li_result.notifications)
+        sched = s.parse_report_schedule()
+        notes.extend(sched.get("notifications") or [])
+        parse_sched = s.parse_parse_schedule()
+        notes.extend(parse_sched.get("notifications") or [])
+        alert_cfg = s.parse_alert_config()
+        notes.extend(alert_cfg.get("notifications") or [])
+        self._config_notifications = notes
         return {
             "app_name": s.app_name,
-            "base_url": s.base_url,
-            "search_queries": s.search_list(),
-            "apply_limit": s.apply_limit,
+            "base_url": launch.base_url if launch else s.base_url,
+            "search_queries": list(launch.queries)
+            if launch
+            else s.search_list(),
+            "search_area": launch.search_area if launch else s.search_area,
+            "apply_limit": launch.apply_limit if launch else s.apply_limit,
             "headless": s.headless,
-            "dry_run": s.dry_run,
-            "require_remote_or_hybrid": s.require_remote_or_hybrid,
-            "skip_gov": s.skip_gov,
-            "require_python_keywords": s.require_python_keywords,
+            "dry_run": launch.dry_run if launch else s.dry_run,
+            "require_remote_or_hybrid": (
+                launch.require_remote_or_hybrid
+                if launch
+                else s.require_remote_or_hybrid
+            ),
+            "skip_gov": launch.skip_gov if launch else s.skip_gov,
+            "require_python_keywords": (
+                launch.require_python_keywords
+                if launch
+                else s.require_python_keywords
+            ),
             "database_backend": "sqlite" if s.is_sqlite() else "external",
             "max_per_hour": s.max_per_hour,
             "max_per_day": s.max_per_day,
             "enable_remote_browser": s.enable_remote_browser,
+            "launch": launch.to_public_dict() if launch else None,
+            "linkedin": li.to_public_dict(),
+            "sites": list((load_areas_catalog().get("sites") or {}).keys()),
+            "workspaces": ["hh", "linkedin"],
+            "notifications": notes,
+            "report_schedule": (
+                self.scheduler.status() if self.scheduler else sched
+            ),
+            "parse_schedule": (
+                self.parse_scheduler.status()
+                if self.parse_scheduler
+                else parse_sched
+            ),
         }
+
+    def get_launch(self) -> dict[str, Any]:
+        from app.domain.launch_profile import (
+            launch_to_strict_text,
+            load_areas_catalog,
+            load_launch_profile_with_notes,
+        )
+
+        launch, notes = load_launch_profile_with_notes(self.settings.launch_path)
+        self._config_notifications = notes
+        cat = load_areas_catalog()
+        return {
+            "ok": True,
+            "launch": launch.to_public_dict() if launch else None,
+            "strict_text": launch_to_strict_text(launch) if launch else "",
+            "example_path": "config/launch.example.json",
+            "path": str(self.settings.launch_path),
+            "sites": cat.get("sites") or {},
+            "locations": [
+                {
+                    "country": loc["country"],
+                    "cities": [c["city"] for c in (loc.get("cities") or [])],
+                }
+                for loc in (cat.get("locations") or [])
+            ],
+            "notifications": notes,
+        }
+
+    def save_launch_from_text(self, text: str) -> dict[str, Any]:
+        from app.domain.launch_profile import (
+            launch_to_strict_text,
+            parse_and_validate_text,
+            save_launch_profile,
+        )
+
+        try:
+            profile = parse_and_validate_text(text)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        path = save_launch_profile(profile, self.settings.launch_path)
+        self.uow.journal.log(
+            "system",
+            "launch_saved",
+            f"{profile.site} / {profile.location.country} / {profile.location.city}",
+        )
+        return {
+            "ok": True,
+            "path": str(path),
+            "launch": profile.to_public_dict(),
+            "strict_text": launch_to_strict_text(profile),
+        }
+
+    def save_launch_from_json(self, data: dict[str, Any]) -> dict[str, Any]:
+        from app.domain.launch_profile import (
+            launch_to_strict_text,
+            save_launch_profile,
+            validate_launch_dict,
+        )
+
+        try:
+            profile = validate_launch_dict(data)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        path = save_launch_profile(profile, self.settings.launch_path)
+        return {
+            "ok": True,
+            "path": str(path),
+            "launch": profile.to_public_dict(),
+            "strict_text": launch_to_strict_text(profile),
+        }
+
+    def validate_launch_text(self, text: str) -> dict[str, Any]:
+        from app.domain.launch_profile import (
+            launch_to_strict_text,
+            parse_and_validate_text,
+        )
+
+        try:
+            profile = parse_and_validate_text(text)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        return {
+            "ok": True,
+            "launch": profile.to_public_dict(),
+            "strict_text": launch_to_strict_text(profile),
+        }
+
+    # ── LinkedIn workspace ────────────────────────────────────
+
+    def start_linkedin_login(self, profile: str = "default") -> dict[str, Any]:
+        profile = self._profile(profile)
+        if self.settings.enable_remote_browser:
+            if self.runner.is_busy(profile):
+                return {"ok": False, "error": "job already running"}
+            return self.remote_browser.start(profile, workspace="linkedin")
+        return self.runner.start_linkedin_login(profile)
+
+    def start_linkedin_network(self, profile: str = "default") -> dict[str, Any]:
+        profile = self._profile(profile)
+        if self.remote_browser.get(profile):
+            return {"ok": False, "error": "remote browser open — закройте или Stop"}
+        return self.runner.start_linkedin_network(profile)
+
+    def start_linkedin_vacancies(self, profile: str = "default") -> dict[str, Any]:
+        profile = self._profile(profile)
+        if self.remote_browser.get(profile):
+            return {"ok": False, "error": "remote browser open — закройте или Stop"}
+        return self.runner.start_linkedin_vacancies(profile)
+
+    def get_linkedin_launch(self) -> dict[str, Any]:
+        from app.domain.linkedin_profile import load_linkedin_launch
+
+        lp, result = load_linkedin_launch(self.settings.linkedin_launch_path)
+        self._config_notifications = list(result.notifications)
+        return {
+            "ok": True,
+            "launch": lp.to_public_dict(),
+            "path": str(self.settings.linkedin_launch_path),
+            "example_path": "config/linkedin.launch.example.json",
+            "notifications": result.notifications,
+            "source": result.source,
+        }
+
+    def save_linkedin_launch(self, data: dict[str, Any]) -> dict[str, Any]:
+        from app.domain.linkedin_profile import (
+            save_linkedin_launch,
+            validate_linkedin_dict,
+        )
+
+        try:
+            profile = validate_linkedin_dict(data)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        path = save_linkedin_launch(profile, self.settings.linkedin_launch_path)
+        self.uow.journal.log("system", "linkedin_launch_saved", str(path))
+        return {
+            "ok": True,
+            "path": str(path),
+            "launch": profile.to_public_dict(),
+        }
+
+    def list_linkedin_contacts(
+        self, profile: str = "default", limit: int = 100
+    ) -> list[dict[str, Any]]:
+        profile = self._profile(profile)
+        out = []
+        for c in self.uow.linkedin_contacts.list_for_profile(profile, limit=limit):
+            out.append(
+                {
+                    "id": c.id,
+                    "url": c.url,
+                    "name": c.name,
+                    "headline": c.headline,
+                    "location": c.location,
+                    "query": c.query,
+                    "status": c.status,
+                    "error": c.error,
+                }
+            )
+        return out
+
+    def list_linkedin_vacancies(
+        self, profile: str = "default", limit: int = 100
+    ) -> list[dict[str, Any]]:
+        profile = self._profile(profile)
+        out = []
+        for v in self.uow.linkedin_vacancies.list_for_profile(profile, limit=limit):
+            out.append(
+                {
+                    "id": v.id,
+                    "url": v.url,
+                    "title": v.title,
+                    "company": v.company,
+                    "location": v.location,
+                    "query": v.query,
+                    "source": v.source,
+                }
+            )
+        return out
+
+    def list_report_files(self, limit: int = 30) -> list[dict[str, Any]]:
+        try:
+            return self.uow.report_files.list_recent(limit=limit)
+        except Exception:
+            return []
+
+    def run_report_now(
+        self, *, kind: str = "work", profile: str = "default", scheduled: bool = False
+    ) -> dict[str, Any]:
+        from app.infrastructure.scheduler import generate_scheduled_report
+
+        return generate_scheduled_report(
+            self.uow,
+            self.settings,
+            kind=kind,
+            profile=self._profile(profile),
+            scheduled=scheduled,
+        )
 
     def _profile(self, profile: str) -> str:
         name = (profile or "default").strip() or "default"

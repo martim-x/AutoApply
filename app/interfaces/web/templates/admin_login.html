@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme-pref="system">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>{{ app_name }} — Admin</title>
+  <script>
+    (function () {
+      try {
+        var pref = localStorage.getItem("aa-theme") || "system";
+        var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        var resolved = pref === "system" ? (dark ? "dark" : "light") : pref;
+        document.documentElement.setAttribute("data-theme", resolved);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="admin-body">
+  <main class="admin-shell">
+    <header class="admin-header">
+      <p class="admin-brand">{{ app_name }}</p>
+      <h1>Admin</h1>
+      <p class="admin-lead">Вход для редактирования <code>.env</code></p>
+    </header>
+    {% if error %}
+    <p class="admin-flash admin-flash-error" role="alert">{{ error }}</p>
+    {% endif %}
+    <form class="admin-card" method="post" action="/admin/login" autocomplete="on">
+      <label class="admin-field">
+        <span>Имя</span>
+        <input type="text" name="name" required autofocus autocomplete="username" />
+      </label>
+      <label class="admin-field">
+        <span>Пароль</span>
+        <input type="password" name="password" required autocomplete="current-password" />
+      </label>
+      <button type="submit" class="primary admin-submit">Войти</button>
+    </form>
+    <p class="admin-foot"><a href="/">← К приложению</a></p>
+  </main>
+</body>
+</html>
