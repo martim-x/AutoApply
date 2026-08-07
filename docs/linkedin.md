@@ -17,7 +17,10 @@ LinkedIn агрессивно ограничивает автоматизаци�
 1. Переключите вкладку **LinkedIn**.
 2. **Войти в LinkedIn** → войдите руками (remote screencast или локальное окно) → **Сохранить сессию**.  
    Файл: `data/sessions/<profile>.linkedin.storage.json` (не затирает HH-сессию).
-3. **Критерии LI** — JSON (`config/linkedin.launch.json`).
+3. **Критерии** (кнопка рядом с действиями) — JSON в модалке → `config/linkedin.launch.json`.  
+   Лимит «Расширить сеть» = **`connect_limit`** (на кнопке: «до N контактов»).  
+   Лимит «Собрать вакансии» = **`vacancy_limit`**.  
+   Это **не** `.env` (в отличие от HH `VACANCY_LIMIT`) — правьте в UI Критерии или в файле.
 4. **Расширить сеть** — people search по локациям/ролям → открытие профилей → Connect (skip Pending).
 5. Вкладка **Вакансии** → **Собрать вакансии** — ссылки/заголовки в таблицу `linkedin_vacancies`.
 
@@ -25,14 +28,15 @@ LinkedIn агрессивно ограничивает автоматизаци�
 
 ## Конфиг `config/linkedin.launch.json`
 
-Пример: `config/linkedin.launch.example.json`.
+Пример: `config/linkedin.launch.example.json`.  
+Редактирование: UI **Критерии** LinkedIn (модалка) или файл напрямую.
 
 | Ключ | Default | Смысл |
 |------|---------|--------|
 | `locations` | `Minsk`, `Russia`, `CIS` | приоритет локаций в поиске |
 | `people_queries` | `HR`, `backend developer`, … | роли для networking |
 | `vacancy_queries` | `Python backend`, … | запросы вакансий |
-| `connect_limit` | `15` | максимум Connect за прогон |
+| `connect_limit` | `15` | максимум Connect за прогон (кнопка «Расширить сеть») |
 | `vacancy_limit` | `40` | максимум ссылок вакансий |
 | `max_profiles_per_query` | `10` | профилей с SERP на пару query×location |
 | `min_action_interval` | `8.0` | пауза между действиями (сек) |
@@ -40,7 +44,7 @@ LinkedIn агрессивно ограничивает автоматизаци�
 | `jitter` | `0.4` | разброс пауз |
 | `dry_run` | `false` | не жать Connect, только лог |
 
-Если файла нет или ключ отсутствует — подставляются defaults + **уведомление в UI** и запись в журнал (`config_default`).
+Если файла нет или ключ отсутствует — подставляются defaults (`LINKEDIN_LAUNCH_DEFAULTS` в `app/domain/linkedin_profile.py`) + **уведомление в UI** и запись в журнал (`config_default`). Отдельного `CONNECT_LIMIT` / `VACANCY_LIMIT` в `.env` для LinkedIn **нет**.
 
 Путь можно переопределить: `LINKEDIN_LAUNCH_PATH`.
 

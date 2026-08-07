@@ -221,11 +221,11 @@
             </button>
             <button type="button" id="btnLiNetwork" class="touch">
               <svg class="ico" aria-hidden="true"><use href="#i-globe"/></svg>
-              <span class="btn-label" data-label-li-network data-i18n="linkedin.network">Расширить сеть</span>
+              <span class="btn-label" data-label-li-network data-i18n="linkedin.network" data-i18n-vars='{"n":15}'>Расширить сеть (до 15 контактов)</span>
             </button>
             <button type="button" id="btnLiVacancies" class="touch">
               <svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>
-              <span class="btn-label" data-label-li-vacancies data-i18n="linkedin.vacancies">Собрать вакансии</span>
+              <span class="btn-label" data-label-li-vacancies data-i18n="linkedin.vacancies" data-i18n-vars='{"n":40}'>Собрать вакансии (до 40)</span>
             </button>
             <button type="button" id="btnLiStop" class="danger touch">
               <svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg>
@@ -237,6 +237,7 @@
             <span class="btn-label" data-i18n="linkedin.criteria" data-i18n-text="1">Критерии</span>
           </button>
         </div>
+        <p class="limits-hint" id="liLimitsHint">Сеть: до 15 контактов · Вакансии: до 40</p>
         <p class="message session-banner" id="sessionBannerLi" hidden></p>
         <div class="li-tabs" id="liTabs">
           <button type="button" class="li-tab active" data-li-tab="network" data-i18n="linkedin.tab.network">Контакты</button>
@@ -445,7 +446,7 @@
           <svg class="ico" aria-hidden="true"><use href="#i-x"/></svg>
         </button>
       </div>
-      <p class="launch-desc" data-i18n="linkedin.modal.desc">JSON → config/linkedin.launch.json</p>
+      <p class="launch-desc" data-i18n="linkedin.modal.desc">JSON → config/linkedin.launch.json · connect_limit / vacancy_limit</p>
       <textarea id="liLaunchText" class="launch-text" rows="14" spellcheck="false"></textarea>
       <div class="actions launch-actions">
         <button type="button" id="btnLiLaunchSave" class="primary touch">

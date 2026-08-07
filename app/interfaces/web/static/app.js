@@ -22,6 +22,7 @@
   let viewport = { width: 1280, height: 900 };
   let img = new Image();
   let lastLaunch = null;
+  let lastLiLaunch = null;
   let launchLoaded = false;
   let remoteOverlayKey = null;
   let lastStatusCode = "idle";
@@ -81,11 +82,34 @@
     return { searchN, applyN };
   }
 
+  function liLimitVars() {
+    const launch = lastLiLaunch || {};
+    const connectN = Number(launch.connect_limit) || 15;
+    const vacancyN = Number(launch.vacancy_limit) || 40;
+    return { connectN, vacancyN };
+  }
+
   function syncLimitsHint() {
     const el = $("hhLimitsHint");
     if (!el) return;
     const { searchN, applyN } = limitVars();
     el.textContent = t("limits.hint", { search: searchN, apply: applyN });
+  }
+
+  function syncLiLimitsHint() {
+    const el = $("liLimitsHint");
+    if (!el) return;
+    const { connectN, vacancyN } = liLimitVars();
+    el.textContent = t("linkedin.limits.hint", {
+      connect: connectN,
+      vacancies: vacancyN,
+    });
+  }
+
+  function updateLiLaunch(launch) {
+    lastLiLaunch = launch || null;
+    syncLiLimitsHint();
+    syncActionLabelsCached();
   }
 
   const MSG_MAX = 180;
@@ -212,11 +236,13 @@
       btnLiConfirm.classList.toggle("is-warn", warn);
     }
 
+    const { connectN, vacancyN } = liLimitVars();
     const btnLiNetwork = $("btnLiNetwork");
     if (btnLiNetwork) {
       setBtnLabel(
         btnLiNetwork,
-        liNetwork ? "linkedin.network.busy" : "linkedin.network"
+        liNetwork ? "linkedin.network.busy" : "linkedin.network",
+        { n: connectN }
       );
       btnLiNetwork.classList.toggle("is-busy", liNetwork);
       btnLiNetwork.classList.remove("is-primary", "primary");
@@ -225,11 +251,13 @@
     if (btnLiVacancies) {
       setBtnLabel(
         btnLiVacancies,
-        liVacancies ? "linkedin.vacancies.busy" : "linkedin.vacancies"
+        liVacancies ? "linkedin.vacancies.busy" : "linkedin.vacancies",
+        { n: vacancyN }
       );
       btnLiVacancies.classList.toggle("is-busy", liVacancies);
       btnLiVacancies.classList.remove("is-primary", "primary");
     }
+    syncLiLimitsHint();
 
     ["btnLogin", "btnLiLogin"].forEach((id) => {
       const el = $(id);
@@ -1226,6 +1254,7 @@
       try {
         const data = await api("/api/linkedin/launch");
         $("liLaunchText").value = JSON.stringify(data.launch || {}, null, 2);
+        updateLiLaunch(data.launch);
         if (data.notifications) showNotifications(data.notifications);
         $("liLaunchMessage").textContent = "";
       } catch (e) {
@@ -1254,6 +1283,7 @@
           );
           return;
         }
+        updateLiLaunch(r.launch || launch);
         $("liLaunchMessage").textContent = truncateMsg(
           t("launch.saved", { path: r.path }),
           200
@@ -1485,6 +1515,7 @@
       setStatusMessage(t("status.ready"));
     }
     if (launchLoaded) updateLaunchMeta(lastLaunch);
+    syncLiLimitsHint();
     if (remoteOverlayKey) {
       remoteOverlay.textContent = t(remoteOverlayKey);
     }
@@ -1631,6 +1662,7 @@
       applyRemoteUiFlag(!!cfg.enable_remote_browser);
       if (cfg.notifications) showNotifications(cfg.notifications);
       $("cfgHint").textContent = `${cfg.app_name} · ${cfg.base_url || ""}`.trim();
+      updateLiLaunch(cfg.linkedin || null);
       await refreshLaunch();
     } catch (_) {}
     await refreshProfiles();
