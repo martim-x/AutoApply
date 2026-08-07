@@ -168,7 +168,6 @@ class PlaywrightBrowserGateway:
         kept = 0
         processed = 0
         walk = s.serp_walk_knobs()
-        early_stop = bool(walk["early_stop_enabled"])
         streak_stop = int(walk["old_streak_stop"])
         max_pages = int(walk["max_serp_pages"])
         dup_page_stop = int(walk["dup_page_stop"])
