@@ -31,7 +31,9 @@
   let workspace = "hh";
   let liTab = "network";
   let remoteFsDesired = false;
+  let logFullscreenId = null;
   const WORKSPACE_KEY = "aa-workspace";
+  const PANEL_SIZE_KEY = "aa-panel-sizes";
 
   function profile() {
     if (profileSelect.value) return profileSelect.value;
@@ -44,6 +46,10 @@
       headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
       ...opts,
     });
+    if (res.status === 401) {
+      window.location.href = "/login";
+      throw new Error("Unauthorized");
+    }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || data.error || res.statusText);
     return data;
@@ -56,11 +62,27 @@
     });
   }
 
-  function setBtnLabel(el, key) {
+  function setBtnLabel(el, key, vars) {
     if (!el) return;
     const label = el.querySelector(".btn-label") || el;
     label.setAttribute("data-i18n", key);
-    label.textContent = t(key);
+    if (vars) label.setAttribute("data-i18n-vars", JSON.stringify(vars));
+    else label.removeAttribute("data-i18n-vars");
+    label.textContent = t(key, vars);
+  }
+
+  function limitVars() {
+    const launch = lastLaunch || {};
+    const searchN = Number(launch.vacancy_limit) || 30;
+    const applyN = Number(launch.apply_limit) || 30;
+    return { searchN, applyN };
+  }
+
+  function syncLimitsHint() {
+    const el = $("hhLimitsHint");
+    if (!el) return;
+    const { searchN, applyN } = limitVars();
+    el.textContent = t("limits.hint", { search: searchN, apply: applyN });
   }
 
   const MSG_MAX = 180;
@@ -119,20 +141,31 @@
     const liVacancies =
       searching && (msg.includes("vacanc") || msg.includes("job"));
 
+    const { searchN, applyN } = limitVars();
     const btnSearch = $("btnSearch");
     if (btnSearch) {
       const active = searching && workspace === "hh";
-      setBtnLabel(btnSearch, active ? "search.busy" : "search");
+      setBtnLabel(
+        btnSearch,
+        active ? "search.busy" : "search",
+        { n: searchN }
+      );
       btnSearch.classList.toggle("is-busy", active);
       btnSearch.classList.remove("is-primary", "primary");
     }
 
     const btnApply = $("btnApply");
     if (btnApply) {
-      setBtnLabel(btnApply, applying ? "apply.busy" : "apply");
+      setBtnLabel(
+        btnApply,
+        applying ? "apply.busy" : "apply",
+        { n: applyN }
+      );
       btnApply.classList.toggle("is-busy", applying);
       btnApply.classList.remove("is-primary", "primary");
     }
+
+    syncLimitsHint();
 
     const btnRemote = $("btnRemoteBrowser");
     if (btnRemote) {
@@ -377,7 +410,9 @@
   function highlightLogMessage(msg) {
     let s = escapeHtml(msg || "");
     s = s.replace(/\b(filtered:[a-z_]+)\b/gi, '<span class="filter">$1</span>');
-    s = s.replace(/\b(HIGH|MEDIUM|LOW)\b/g, '<span class="score">$1</span>');
+    s = s.replace(/\bHIGH\b/g, '<span class="cat-HIGH">HIGH</span>');
+    s = s.replace(/\bMEDIUM\b/g, '<span class="cat-MEDIUM">MEDIUM</span>');
+    s = s.replace(/\bLOW\b/g, '<span class="cat-LOW">LOW</span>');
     s = s.replace(/\b(score[=:]?\s*\d+)\b/gi, '<span class="score">$1</span>');
     s = s.replace(/\b(applied|queued|skipped|dry_run|ok)\b/gi, '<span class="ok">$1</span>');
     s = s.replace(/\b(error[:\w.-]*)\b/gi, '<span class="err">$1</span>');
@@ -469,6 +504,7 @@
     // Nested panes: keep LI tab visibility correct after parent show.
     if ($("hhWorkspacePane")) $("hhWorkspacePane").hidden = isLi;
     if ($("liWorkspacePane")) $("liWorkspacePane").hidden = !isLi;
+    if (logFullscreenId) setLogFullscreen(logFullscreenId, false);
     applyLiTab(liTab);
     syncActionLabels(lastStatusCode, lastStatusMessage, lastBusy);
   }
@@ -597,7 +633,9 @@
   }
 
   async function refreshLogs() {
-    const data = await api(`/api/logs?profile=${encodeURIComponent(profile())}&limit=50`);
+    const data = await api(
+      `/api/logs?profile=${encodeURIComponent(profile())}&limit=50&service=hh`
+    );
     const list = $("logList");
     list.innerHTML = "";
     (data.logs || []).forEach((l) => {
@@ -718,7 +756,9 @@
   }
 
   async function refreshLiLogs() {
-    const data = await api(`/api/logs?profile=${encodeURIComponent(profile())}&limit=50`);
+    const data = await api(
+      `/api/logs?profile=${encodeURIComponent(profile())}&limit=50&service=linkedin`
+    );
     const list = $("liLogList");
     if (!list) return;
     list.innerHTML = "";
@@ -1189,6 +1229,8 @@
     launchLoaded = true;
     if (!launch) {
       $("launchMeta").textContent = t("launch.meta.empty");
+      syncLimitsHint();
+      syncActionLabels(lastStatusCode, lastStatusMessage, lastBusy);
       return;
     }
     const loc = launch.location || {};
@@ -1198,8 +1240,13 @@
         ? `$${launch.salary_min_usd ?? "?"}-${launch.salary_max_usd ?? "?"}`
         : "—";
     const q = (launch.queries || []).length;
+    const vLim = launch.vacancy_limit ?? 30;
+    const aLim = launch.apply_limit ?? 30;
     $("launchMeta").textContent =
-      `${launch.site || "?"} · ${city} · ${sal} · queries=${q}`;
+      `${launch.site || "?"} · ${city} · ${sal} · queries=${q} · ` +
+      `search≤${vLim} · apply≤${aLim}`;
+    syncLimitsHint();
+    syncActionLabels(lastStatusCode, lastStatusMessage, lastBusy);
   }
 
   async function refreshLaunch() {
@@ -1360,10 +1407,137 @@
     });
   });
 
+  function readPanelSizes() {
+    try {
+      const raw = localStorage.getItem(PANEL_SIZE_KEY);
+      const data = raw ? JSON.parse(raw) : {};
+      return data && typeof data === "object" ? data : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function writePanelSizes(map) {
+    try {
+      localStorage.setItem(PANEL_SIZE_KEY, JSON.stringify(map || {}));
+    } catch (_) {}
+  }
+
+  function initPanelSizes() {
+    const saved = readPanelSizes();
+    document.querySelectorAll("[data-panel-size]").forEach((el) => {
+      const key = el.getAttribute("data-panel-size");
+      const h = key && saved[key];
+      if (typeof h === "number" && h > 120) {
+        el.style.height = `${h}px`;
+      }
+      let timer = null;
+      const persist = () => {
+        if (!key || el.classList.contains("is-log-fullscreen")) return;
+        const next = readPanelSizes();
+        next[key] = Math.round(el.getBoundingClientRect().height);
+        writePanelSizes(next);
+      };
+      const schedule = () => {
+        clearTimeout(timer);
+        timer = setTimeout(persist, 120);
+      };
+      el.addEventListener("pointerup", schedule);
+      if (typeof ResizeObserver !== "undefined") {
+        let ready = false;
+        const ro = new ResizeObserver(() => {
+          if (!ready) {
+            ready = true;
+            return;
+          }
+          schedule();
+        });
+        ro.observe(el);
+      }
+    });
+  }
+
+  function syncLogExpandBtn(panel, expanded) {
+    if (!panel) return;
+    const btn = panel.querySelector("[data-log-expand]");
+    if (!btn) return;
+    const key = expanded ? "log.collapse" : "log.expand";
+    const label = t(key);
+    btn.setAttribute("data-i18n", key);
+    btn.setAttribute("title", label);
+    btn.setAttribute("aria-label", label);
+    const use = btn.querySelector("use");
+    if (use) use.setAttribute("href", expanded ? "#i-compress" : "#i-expand");
+  }
+
+  function setLogFullscreen(panelId, on) {
+    const panel = panelId ? $(panelId) : null;
+    if (logFullscreenId && logFullscreenId !== panelId) {
+      const prev = $(logFullscreenId);
+      if (prev) {
+        prev.classList.remove("is-log-fullscreen");
+        syncLogExpandBtn(prev, false);
+      }
+    }
+    if (!panel) {
+      logFullscreenId = null;
+      document.body.classList.remove("is-log-fs-open");
+      return;
+    }
+    panel.classList.toggle("is-log-fullscreen", !!on);
+    syncLogExpandBtn(panel, !!on);
+    logFullscreenId = on ? panelId : null;
+    document.body.classList.toggle("is-log-fs-open", !!on);
+  }
+
+  function initLogFullscreen() {
+    document.querySelectorAll("[data-log-expand]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-log-expand");
+        if (!id) return;
+        const open = logFullscreenId === id;
+        setLogFullscreen(id, !open);
+      });
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape" || !logFullscreenId) return;
+      if (remoteModal && !remoteModal.hidden) return;
+      if (launchModal && !launchModal.hidden) return;
+      if ($("liLaunchModal") && !$("liLaunchModal").hidden) return;
+      if (explainModal && !explainModal.hidden) return;
+      setLogFullscreen(logFullscreenId, false);
+    });
+    window.addEventListener("aa:lang", () => {
+      if (logFullscreenId) {
+        syncLogExpandBtn($(logFullscreenId), true);
+      } else {
+        document.querySelectorAll(".panel-log").forEach((p) => syncLogExpandBtn(p, false));
+      }
+    });
+  }
+
   initTheme();
   initWorkspace();
+  initPanelSizes();
+  initLogFullscreen();
   if (window.AA_I18N) window.AA_I18N.initLang();
   setStatusMessage(t("status.ready"));
+
+  const logoutForm = $("logoutForm");
+  if (logoutForm) {
+    logoutForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        await fetch("/logout", {
+          method: "POST",
+          credentials: "same-origin",
+          redirect: "manual",
+          headers: { Accept: "text/html" },
+        });
+      } catch (_) {}
+      window.location.replace("/login");
+    });
+  }
 
   (async () => {
     try {

@@ -1,4 +1,4 @@
-# Запуск и назначение AutoApply
+# Запуск и назначение auto-apply-app
 
 Кратко: **на что рассчитан** продукт и **как поднять** его локально / в Docker.
 
@@ -12,7 +12,7 @@ LinkedIn workspace → [linkedin.md](./linkedin.md).
 
 ## На что рассчитан запуск
 
-AutoApply — **личный робот откликов** для кандидата Middle+ Python (профиль из Obsidian `07 Legend`):
+auto-apply-app — **личный робот откликов** для кандидата Middle+ Python (профиль из Obsidian `07 Legend`):
 
 | Цель | Как закрывается |
 |------|-----------------|
@@ -223,7 +223,7 @@ SERP сортируется по дате (`order_by=publication_time` / LinkedI
 | `config/launch.json` | ваш прогон (не коммитить) |
 | `config/weights.json` | дерево весов scoring |
 | `config/areas.json` | каталог стран/городов → `area_id` |
-| `data/rabota_apply.sqlite` | очередь, логи, статусы |
+| `data/auto_apply_app.sqlite` | очередь, логи, статусы (создаётся пустой при первом старте; legacy `rabota_apply.sqlite` переименовывается; `RESET_DB=true` — разовый сброс) |
 | `data/sessions/<profile>.storage.json` | cookies Playwright |
 | `letter_universal.txt` | текст отклика |
 | `.env` | секреты и оверрайды (не коммитить) |

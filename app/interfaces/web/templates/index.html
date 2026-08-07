@@ -139,6 +139,9 @@
               <svg class="ico" aria-hidden="true"><use href="#i-moon"/></svg>
             </button>
           </div>
+          <form method="post" action="/logout" class="logout-form" id="logoutForm">
+            <button type="submit" class="theme-btn logout-btn" data-i18n="logout" data-i18n-attr="title,aria-label">Выйти</button>
+          </form>
         </div>
       </div>
     </header>
@@ -180,11 +183,11 @@
             </button>
             <button type="button" id="btnSearch" class="touch">
               <svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>
-              <span class="btn-label" data-label-search data-i18n="search">Искать вакансии</span>
+              <span class="btn-label" data-label-search data-i18n="search">Искать вакансии (до 30)</span>
             </button>
             <button type="button" id="btnApply" class="touch">
               <svg class="ico" aria-hidden="true"><use href="#i-send"/></svg>
-              <span class="btn-label" data-label-apply data-i18n="apply">Откликнуться на вакансии</span>
+              <span class="btn-label" data-label-apply data-i18n="apply">Откликнуться на все найденные (до 30)</span>
             </button>
             <button type="button" id="btnStop" class="danger touch">
               <svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg>
@@ -196,6 +199,7 @@
             <span class="btn-label" data-i18n="launch.criteria">Критерии</span>
           </button>
         </div>
+        <p class="limits-hint" id="hhLimitsHint">Поиск: до 30 · Отклик: все найденные в очереди, до 30</p>
         <p class="message session-banner" id="sessionBannerHh" hidden></p>
       </div>
 

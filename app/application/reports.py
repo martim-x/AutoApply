@@ -51,7 +51,7 @@ def assemble_report(
     kind = normalize_kind(kind)
     profile = uow.profiles.resolve_profile(profile)
     now = time.time()
-    app_name = settings.app_name or "AutoApply"
+    app_name = settings.app_name or "auto-apply-app"
 
     if kind == "work":
         return _work_report(uow, settings, profile, app_name, now)
@@ -336,7 +336,14 @@ def _launch_report(
                             "Python keywords",
                             str((pub or {}).get("require_python_keywords", "—")),
                         ),
-                        ("Apply limit", str((pub or {}).get("apply_limit", "—"))),
+                        (
+                            "Vacancy limit (search)",
+                            str((pub or {}).get("vacancy_limit", "—")),
+                        ),
+                        (
+                            "Apply limit (all found)",
+                            str((pub or {}).get("apply_limit", "—")),
+                        ),
                         ("Dry run", str((pub or {}).get("dry_run", "—"))),
                         (
                             "Salary strict",
@@ -470,6 +477,7 @@ def _launch_public_lines(settings: Settings) -> list[str]:
         f"level: {pub.get('level')}; salary: {_salary_label(pub)}",
         f"filters: remote={pub.get('require_remote_or_hybrid')}, "
         f"skip_gov={pub.get('skip_gov')}, python={pub.get('require_python_keywords')}",
+        f"vacancy_limit={pub.get('vacancy_limit')}, "
         f"apply_limit={pub.get('apply_limit')}, dry_run={pub.get('dry_run')}",
         f"queries: {queries}" if queries else "queries: —",
     ]

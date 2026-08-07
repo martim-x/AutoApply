@@ -40,6 +40,7 @@
       "theme.light.aria": "Тема: светлая",
       "theme.dark": "Тёмная",
       "theme.dark.aria": "Тема: тёмная",
+      "logout": "Выйти",
       "lang.group": "Язык интерфейса",
       "lang.switch": "Переключить язык",
       "lang.ru.aria": "Русский",
@@ -79,10 +80,11 @@
       "session.missing": "Нет сохранённой сессии — войдите и сохраните вход.",
       "session.save.reminder": "Вошли? Сохраните сессию входа.",
       "empty.yet": "Пока пусто",
-      "search": "Искать вакансии",
-      "search.busy": "Идёт поиск",
-      "apply": "Откликнуться на вакансии",
-      "apply.busy": "Идёт отклик",
+      "search": "Искать вакансии (до {n})",
+      "search.busy": "Идёт поиск (до {n})",
+      "apply": "Откликнуться на все найденные (до {n})",
+      "apply.busy": "Идёт отклик (до {n})",
+      "limits.hint": "Поиск: до {search} · Отклик: все найденные в очереди, до {apply}",
       "stop": "Остановить",
       "close": "Закрыть",
       "return": "Вернуться",
@@ -177,6 +179,7 @@
       "theme.light.aria": "Theme: light",
       "theme.dark": "Dark",
       "theme.dark.aria": "Theme: dark",
+      "logout": "Log out",
       "lang.group": "Interface language",
       "lang.switch": "Switch language",
       "lang.ru.aria": "Russian",
@@ -216,10 +219,11 @@
       "session.missing": "No saved session — sign in and save it.",
       "session.save.reminder": "Signed in? Save the sign-in session.",
       "empty.yet": "Nothing yet",
-      "search": "Search vacancies",
-      "search.busy": "Searching…",
-      "apply": "Apply to vacancies",
-      "apply.busy": "Applying…",
+      "search": "Search vacancies (up to {n})",
+      "search.busy": "Searching (up to {n})",
+      "apply": "Apply to all found (up to {n})",
+      "apply.busy": "Applying (up to {n})",
+      "limits.hint": "Search: up to {search} · Apply: all found in queue, up to {apply}",
       "stop": "Stop",
       "close": "Close",
       "return": "Return",
@@ -309,7 +313,16 @@
     scope.querySelectorAll("[data-i18n]").forEach((el) => {
       const key = el.getAttribute("data-i18n");
       if (!key) return;
-      const val = t(key);
+      let vars = null;
+      const rawVars = el.getAttribute("data-i18n-vars");
+      if (rawVars) {
+        try {
+          vars = JSON.parse(rawVars);
+        } catch (_) {
+          vars = null;
+        }
+      }
+      const val = t(key, vars);
       const attrs = (el.getAttribute("data-i18n-attr") || "")
         .split(",")
         .map((a) => a.trim())

@@ -14,6 +14,7 @@
   "require_remote_or_hybrid": true,
   "skip_gov": true,
   "require_python_keywords": true,
+  "vacancy_limit": 30,
   "apply_limit": 30,
   "dry_run": false,
   "salary_min_usd": 2200,

@@ -1,7 +1,7 @@
 [project]
 name = "autoapply"
 version = "0.1.0"
-description = "Поиск и отклики на rabota.by: Web UI + API + Playwright-воркер + SQLite"
+description = "auto-apply-app: поиск и автоотклики (hh / rabota / LinkedIn) — Web UI + API + Playwright + SQLite"
 authors = [{ name = "martim-x" }]
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
@@ -16,6 +16,9 @@ dependencies = [
     "pydantic-settings (>=2.6.0)",
     "itsdangerous (>=2.0.0)",
     "reportlab (>=4.2.0)",
+    "pyjwt (>=2.13.0,<3.0.0)",
+    "sqlalchemy (>=2.0,<3)",
+    "psycopg[binary] (>=3.1,<4)",
 ]
 
 [project.scripts]

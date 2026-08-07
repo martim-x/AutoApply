@@ -43,6 +43,7 @@ class JobRunner:
         self._lock = threading.Lock()
         self._threads: dict[str, threading.Thread] = {}
         self._stops: dict[str, StopFlag] = {}
+        self._services: dict[str, str] = {}
 
     def is_busy(self, profile: str) -> bool:
         t = self._threads.get(profile)
@@ -52,7 +53,13 @@ class JobRunner:
         flag = self._stops.get(profile)
         if flag:
             flag.stop()
-            self.uow.journal.log(profile, "stop_requested", "Остановка запрошена")
+            service = self._services.get(profile, "hh")
+            self.uow.journal.log(
+                profile,
+                "stop_requested",
+                "Остановка запрошена",
+                service=service,
+            )
             self.uow.jobs.set_status(profile, JobStatus.IDLE, "Остановка…")
             return {"ok": True, "message": "stop requested"}
         return {"ok": True, "message": "nothing to stop"}
@@ -68,16 +75,30 @@ class JobRunner:
                     return {"ok": True, "message": "session file already on disk"}
                 return {"ok": False, "error": "login job not running"}
             flag.save_now = True
-        self.uow.journal.log(profile, "login_confirm", "Пользователь подтвердил вход")
+            service = self._services.get(profile, "hh")
+        self.uow.journal.log(
+            profile,
+            "login_confirm",
+            "Пользователь подтвердил вход",
+            service=service,
+        )
         return {"ok": True, "message": "save requested"}
 
-    def _spawn(self, profile: str, target: Callable[[str, StopFlag], None]) -> dict[str, Any]:
+    def _spawn(
+        self,
+        profile: str,
+        target: Callable[[str, StopFlag], None],
+        *,
+        service: str = "hh",
+    ) -> dict[str, Any]:
+        service = service if service in ("hh", "linkedin") else "hh"
         with self._lock:
             if self.is_busy(profile):
                 return {"ok": False, "error": "job already running"}
             self.uow.profiles.ensure_profile(profile)
             stop = StopFlag()
             self._stops[profile] = stop
+            self._services[profile] = service
 
             def runner() -> None:
                 try:
@@ -86,10 +107,12 @@ class JobRunner:
                         self.uow,
                         profile,
                         alerts=self.alerts,
+                        service=service,
                     )
                 finally:
                     with self._lock:
                         self._threads.pop(profile, None)
+                        self._services.pop(profile, None)
 
             t = threading.Thread(target=runner, name=f"job-{profile}", daemon=True)
             self._threads[profile] = t
@@ -97,19 +120,19 @@ class JobRunner:
             return {"ok": True, "message": "started"}
 
     def start_login(self, profile: str) -> dict[str, Any]:
-        return self._spawn(profile, self.gateway.run_login)
+        return self._spawn(profile, self.gateway.run_login, service="hh")
 
     def start_search(self, profile: str) -> dict[str, Any]:
-        return self._spawn(profile, self.gateway.run_search)
+        return self._spawn(profile, self.gateway.run_search, service="hh")
 
     def start_apply(self, profile: str) -> dict[str, Any]:
-        return self._spawn(profile, self.gateway.run_apply)
+        return self._spawn(profile, self.gateway.run_apply, service="hh")
 
     def start_linkedin_login(self, profile: str) -> dict[str, Any]:
-        return self._spawn(profile, self.linkedin.run_login)
+        return self._spawn(profile, self.linkedin.run_login, service="linkedin")
 
     def start_linkedin_network(self, profile: str) -> dict[str, Any]:
-        return self._spawn(profile, self.linkedin.run_network)
+        return self._spawn(profile, self.linkedin.run_network, service="linkedin")
 
     def start_linkedin_vacancies(self, profile: str) -> dict[str, Any]:
-        return self._spawn(profile, self.linkedin.run_vacancies)
+        return self._spawn(profile, self.linkedin.run_vacancies, service="linkedin")

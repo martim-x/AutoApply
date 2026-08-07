@@ -27,7 +27,7 @@ git status
 ## Промпт для Cursor (скопировать целиком)
 
 ```
-В каталоге /Users/timofejmarusko/Documents/VisualStudioCodeRepos/AutoApply уже есть локальный git-репозиторий с коммитами (RABOTA_APPLY в корне). Нужно только опубликовать.
+В каталоге /Users/timofejmarusko/Documents/VisualStudioCodeRepos/AutoApply уже есть локальный git-репозиторий с коммитами (auto-apply-app в корне). Нужно только опубликовать.
 
 URL репозитория: YOUR_REPO_URL
 

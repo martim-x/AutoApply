@@ -41,7 +41,7 @@ def create_reports_router() -> APIRouter:
                 status_code=500, detail=f"report generation failed: {e}"
             ) from e
 
-        filename = f"autoapply-{kind}-{profile}.pdf"
+        filename = f"auto-apply-app-{kind}-{profile}.pdf"
 
         def _cleanup() -> None:
             try:

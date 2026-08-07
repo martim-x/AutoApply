@@ -9,6 +9,7 @@ from collections.abc import Callable
 from typing import Any
 
 from app.infrastructure.alerts.smtp import send_smtp_alert
+from app.infrastructure.email_templates import render_alert_email
 from app.infrastructure.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -124,30 +125,45 @@ class AlertService:
             self._recent[key] = now
 
         msg_short = message if len(message) <= 200 else message[:199] + "…"
-        subject = f"[AutoApply] {event} · {profile}"
+        subject = f"[auto-apply-app] {event} · {profile}"
         if len(subject) > 120:
             subject = subject[:119] + "…"
-        body_lines = [
-            f"Profile: {profile}",
-            f"Event: {event}",
-            f"Message: {msg_short}",
-        ]
-        if details:
-            body_lines.append("Details:")
-            for k, v in list(details.items())[:12]:
-                line = f"  {k}: {v}"
-                body_lines.append(line if len(line) <= 200 else line[:199] + "…")
-        body_lines.append("")
-        body_lines.append("Open the AutoApply UI to resume or fix the session.")
-        body = "\n".join(body_lines)
-        if len(body) > 2000:
-            body = body[:1999] + "…"
+        # Drop noisy dumps from the email; full text stays in journal/logs.
+        email_details: dict[str, Any] = {}
+        for k, v in list((details or {}).items())[:8]:
+            key = str(k)
+            if key.lower() in {"tb", "traceback"}:
+                email_details[key] = str(v)[-280:]
+            elif key.lower() in {"raw", "log", "dump"}:
+                email_details[key] = str(v)[:280]
+            else:
+                email_details[key] = v
+        body, html_body = render_alert_email(
+            event=event,
+            message=msg_short,
+            profile=profile,
+            details=email_details or None,
+        )
 
         sent = False
         try:
             sent = bool(
-                self._send_fn(self.settings, subject=subject, body=body)
+                self._send_fn(
+                    self.settings,
+                    subject=subject,
+                    body=body,
+                    html_body=html_body,
+                )
             )
+        except TypeError:
+            # Tests / custom send_fn may only accept body=
+            try:
+                sent = bool(
+                    self._send_fn(self.settings, subject=subject, body=body)
+                )
+            except Exception as e:
+                log.warning("Alert notify failed: %s", e)
+                sent = False
         except Exception as e:
             log.warning("Alert notify failed: %s", e)
             sent = False

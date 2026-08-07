@@ -18,8 +18,13 @@ class Settings(BaseSettings):
     Env-имена = UPPER_SNAKE поля (DATABASE_URL, DATA_DIR, …).
 
     DATABASE_URL:
-      - sqlite:///./data/rabota_apply.sqlite  (default)
-      - postgresql+psycopg://user:pass@host:5432/rabota_apply  (future)
+      - sqlite:///./data/auto_apply_app.sqlite  (default)
+      - postgresql+psycopg://user:pass@host:5432/auto_apply_app  (future)
+
+    Missing SQLite file → created empty with schema on startup.
+    Legacy: if auto_apply_app.sqlite is missing but rabota_apply.sqlite
+    exists in the same directory, it is renamed on startup.
+    RESET_DB=true → delete existing SQLite once (then turn off).
     """
 
     model_config = SettingsConfigDict(
@@ -29,15 +34,17 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    app_name: str = "AutoApply"
+    app_name: str = "auto-apply-app"
     host: str = "0.0.0.0"
     port: int = 8080
     debug: bool = False
 
-    # DB — sqlite by default; postgres-style URL ready for later adapter
+    # DB — sqlite by default; Postgres via DATABASE_URL (Railway plugin etc.)
     database_url: str = Field(
-        default=f"sqlite:///{ROOT / 'data' / 'rabota_apply.sqlite'}",
+        default=f"sqlite:///{ROOT / 'data' / 'auto_apply_app.sqlite'}",
     )
+    # Wipe once on startup, then set false (destroys data: SQLite file or PG schema).
+    reset_db: bool = False
     data_dir: Path = Field(default=ROOT / "data")
     sessions_dir: Path | None = Field(default=None)
     letter_path: Path = Field(default=ROOT / "letter_universal.txt")
@@ -53,6 +60,7 @@ class Settings(BaseSettings):
         "python-разработчик,python-developer,python разработчик,python developer"
     )
     apply_limit: int = 30
+    vacancy_limit: int = 30
     dry_run: bool = False
     headless: bool = False
 
@@ -88,6 +96,13 @@ class Settings(BaseSettings):
     admin_user: str | None = None
     admin_password: str | None = None
     admin_secret: str | None = None
+
+    # Owner gate (/login) — GATE_* preferred, else ADMIN_*
+    # When credentials are set, HTML + /api/* require auth cookies.
+    gate_user: str | None = None
+    gate_password: str | None = None
+    # Set true behind HTTPS (Railway/Fly) so cookies get Secure flag
+    auth_cookie_secure: bool = False
 
     # Scheduled PDF reports (in-process; one Railway service)
     report_schedule_enabled: bool = False
@@ -125,20 +140,49 @@ class Settings(BaseSettings):
     # Max 1 identical (profile+event+message) email per window
     alert_rate_limit_seconds: int = 600
 
+    def effective_headless(self) -> bool:
+        """
+        Chromium launch mode for all browsers (login/search/apply/remote).
+
+        Remote screencast is headless-friendly; when ENABLE_REMOTE_BROWSER is on
+        (Docker/Railway), force headless even if HEADLESS=false in local .env —
+        headed mode needs an X server that containers typically lack.
+        """
+        return bool(self.headless or self.enable_remote_browser)
+
     def admin_enabled(self) -> bool:
         user = (self.admin_user or "").strip()
         password = self.admin_password or ""
         return bool(user and password)
+
+    def gate_credentials(self) -> tuple[str, str] | None:
+        """Owner login: GATE_USER/PASSWORD, else ADMIN_USER/PASSWORD."""
+        user = (self.gate_user or self.admin_user or "").strip()
+        password = self.gate_password or self.admin_password or ""
+        if user and password:
+            return user, password
+        return None
+
+    def gate_enabled(self) -> bool:
+        return self.gate_credentials() is not None
 
     def session_secret(self) -> str:
         """Secret for signed admin cookies; prefer ADMIN_SECRET."""
         if self.admin_secret and self.admin_secret.strip():
             return self.admin_secret.strip()
         # Deterministic fallback so sessions survive restart when secret unset
-        # (still requires ADMIN_USER/PASSWORD; not for public multi-tenant use).
-        user = (self.admin_user or "").strip()
-        password = self.admin_password or ""
-        return f"rabota-apply-admin:{user}:{password}"
+        # (still requires credentials; not for public multi-tenant use).
+        creds = self.gate_credentials()
+        if creds:
+            user, password = creds
+        else:
+            user = (self.admin_user or "").strip()
+            password = self.admin_password or ""
+        return f"auto-apply-app-admin:{user}:{password}"
+
+    def auth_secret(self) -> str:
+        """HMAC secret for access/refresh JWTs (nexus_token / refresh_token)."""
+        return self.session_secret()
 
     @field_validator(
         "data_dir",
@@ -176,6 +220,30 @@ class Settings(BaseSettings):
 
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite:")
+
+    def is_postgres(self) -> bool:
+        u = self.database_url.lower()
+        return u.startswith("postgres://") or u.startswith("postgresql:")
+
+    def postgres_url(self) -> str:
+        """SQLAlchemy URL with psycopg driver; applies DB_PASSWORD if set."""
+        from app.infrastructure.db.postgres_uow import normalize_postgres_url
+
+        url = normalize_postgres_url(self.database_url)
+        if self.db_password:
+            # Inject password when URL has empty or placeholder password
+            # postgresql+psycopg://user@host/db  or  …://user:CHANGE_ME@host/db
+            try:
+                from sqlalchemy.engine.url import make_url
+
+                parsed = make_url(url)
+                pwd = parsed.password
+                if not pwd or pwd in {"CHANGE_ME", "changeme", "password"}:
+                    parsed = parsed.set(password=self.db_password)
+                    url = parsed.render_as_string(hide_password=False)
+            except Exception:
+                pass
+        return url
 
     def search_list(self) -> list[str]:
         out: list[str] = []

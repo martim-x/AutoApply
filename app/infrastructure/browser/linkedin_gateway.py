@@ -29,7 +29,7 @@ from app.domain.parse_dedup import (
     should_stop_old_streak,
 )
 from app.domain.ports import UnitOfWork
-from app.infrastructure.browser.launch import launch_chromium
+from app.infrastructure.browser.launch import launch_chromium, user_facing_browser_error
 from app.infrastructure.browser.linkedin_selectors import LI_SEL
 from app.infrastructure.settings import Settings
 
@@ -73,6 +73,24 @@ class LinkedInBrowserGateway:
         self.settings = settings
         self.alerts = alerts or get_alert_service(settings)
 
+    def _log(
+        self,
+        profile: str,
+        event: str,
+        message: str = "",
+        *,
+        level: str = "info",
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        self.uow.journal.log(
+            profile,
+            event,
+            message,
+            level=level,
+            payload=payload,
+            service="linkedin",
+        )
+
     def _profile(self) -> tuple[LinkedInLaunchProfile, list[str]]:
         lp, result = load_linkedin_launch(self.settings.linkedin_launch_path)
         return lp, result.notifications
@@ -85,7 +103,7 @@ class LinkedInBrowserGateway:
         msg = f"LinkedIn selector failed: {key}"
         if detail:
             msg = f"{msg} — {detail}"
-        self.uow.journal.log(profile, "linkedin_selector_error", msg, level="error")
+        self._log(profile, "linkedin_selector_error", msg, level="error")
 
     def run_login(self, profile: str, stop_flag: Any) -> None:
         from playwright.sync_api import sync_playwright
@@ -94,7 +112,7 @@ class LinkedInBrowserGateway:
         uow.jobs.set_status(
             profile, JobStatus.LOGGING_IN, "Откройте браузер и войдите в LinkedIn"
         )
-        uow.journal.log(profile, "linkedin_login_start", LINKEDIN_LOGIN)
+        self._log(profile, "linkedin_login_start", LINKEDIN_LOGIN)
         stop_flag.save_now = False
 
         with sync_playwright() as p:
@@ -123,7 +141,7 @@ class LinkedInBrowserGateway:
                     return
 
                 context.storage_state(path=str(sp))
-                uow.journal.log(profile, "linkedin_session_saved", f"Сессия → {sp}")
+                self._log(profile, "linkedin_session_saved", f"Сессия → {sp}")
                 uow.jobs.set_status(
                     profile, JobStatus.DONE, f"LinkedIn сессия сохранена: {sp.name}"
                 )
@@ -141,14 +159,14 @@ class LinkedInBrowserGateway:
         s = self.settings
         launch, notes = self._profile()
         for n in notes:
-            uow.journal.log(profile, "config_default", n, level="warning")
+            self._log(profile, "config_default", n, level="warning")
 
         sp = s.linkedin_state_path(profile)
         if not sp.exists():
             uow.jobs.set_status(
                 profile, JobStatus.ERROR, "Нет LinkedIn сессии — сначала Login"
             )
-            uow.journal.log(
+            self._log(
                 profile, "linkedin_network_abort", "нет storage_state", level="error"
             )
             return
@@ -158,7 +176,7 @@ class LinkedInBrowserGateway:
             JobStatus.SEARCHING,
             f"LinkedIn networking… limit={launch.connect_limit}",
         )
-        uow.journal.log(
+        self._log(
             profile,
             "linkedin_network_start",
             f"locations={launch.locations} queries={launch.people_queries} "
@@ -183,13 +201,13 @@ class LinkedInBrowserGateway:
                         "https://www.linkedin.com/search/results/people/"
                         f"?keywords={quote_plus(keywords)}"
                     )
-                    uow.journal.log(
+                    self._log(
                         profile, "linkedin_people_search", f"{keywords} → {url}"
                     )
                     try:
                         page.goto(url, wait_until="domcontentloaded", timeout=s.navigation_timeout_ms)
                     except Exception as e:
-                        uow.journal.log(
+                        self._log(
                             profile,
                             "linkedin_nav_error",
                             str(e),
@@ -236,7 +254,7 @@ class LinkedInBrowserGateway:
                                 errors += 1
                         except Exception as unit_exc:
                             errors += 1
-                            uow.journal.log(
+                            self._log(
                                 profile,
                                 "unit_failed",
                                 f"linkedin contact {norm}: {unit_exc}",
@@ -260,20 +278,21 @@ class LinkedInBrowserGateway:
                     f"LinkedIn network done: connected={connected} "
                     f"skipped={skipped} errors={errors}"
                 )
-                uow.journal.log(profile, "linkedin_network_done", msg)
+                self._log(profile, "linkedin_network_done", msg)
                 current = uow.jobs.get_status(profile)
                 if current.status != JobStatus.WAITING_USER:
                     uow.jobs.set_status(profile, JobStatus.DONE, msg)
             except Exception as e:
-                uow.journal.log(
+                short = user_facing_browser_error(e)
+                self._log(
                     profile,
                     "linkedin_network_error",
-                    f"{e}\n{traceback.format_exc()}",
+                    f"{short}\n{traceback.format_exc()[-1500:]}",
                     level="error",
                 )
-                uow.jobs.set_status(profile, JobStatus.ERROR, str(e))
+                uow.jobs.set_status(profile, JobStatus.ERROR, short)
                 self.alerts.notify_error(
-                    profile, str(e), event="linkedin_network_error"
+                    profile, short, event="linkedin_network_error"
                 )
             finally:
                 try:
@@ -289,14 +308,14 @@ class LinkedInBrowserGateway:
         s = self.settings
         launch, notes = self._profile()
         for n in notes:
-            uow.journal.log(profile, "config_default", n, level="warning")
+            self._log(profile, "config_default", n, level="warning")
 
         sp = s.linkedin_state_path(profile)
         if not sp.exists():
             uow.jobs.set_status(
                 profile, JobStatus.ERROR, "Нет LinkedIn сессии — сначала Login"
             )
-            uow.journal.log(
+            self._log(
                 profile, "linkedin_vacancies_abort", "нет storage_state", level="error"
             )
             return
@@ -333,7 +352,7 @@ class LinkedInBrowserGateway:
                     # Date descending — required for safe old-streak early-stop
                     if early_stop:
                         url += "&sortBy=DD"
-                    uow.journal.log(
+                    self._log(
                         profile, "linkedin_job_search", f"{query} @ {location}"
                     )
                     try:
@@ -343,7 +362,7 @@ class LinkedInBrowserGateway:
                             timeout=s.navigation_timeout_ms,
                         )
                     except Exception as e:
-                        uow.journal.log(
+                        self._log(
                             profile, "linkedin_nav_error", str(e), level="error"
                         )
                         self._pause(launch.min_action_interval, launch.jitter)
@@ -370,7 +389,7 @@ class LinkedInBrowserGateway:
                             known_ids=known_ids,
                         ):
                             old_streak = next_old_streak(old_streak, True)
-                            uow.journal.log(
+                            self._log(
                                 profile,
                                 "filtered:duplicate",
                                 title[:80],
@@ -379,7 +398,7 @@ class LinkedInBrowserGateway:
                             if early_stop and should_stop_old_streak(
                                 old_streak, streak_stop
                             ):
-                                uow.journal.log(
+                                self._log(
                                     profile,
                                     "early_stop:old_streak",
                                     f"streak={old_streak} query={query!r}@{location}",
@@ -414,7 +433,7 @@ class LinkedInBrowserGateway:
                             )
                             saved += 1
                         except Exception as unit_exc:
-                            uow.journal.log(
+                            self._log(
                                 profile,
                                 "unit_failed",
                                 f"linkedin vacancy {link}: {unit_exc}",
@@ -436,20 +455,21 @@ class LinkedInBrowserGateway:
                     pass
 
                 msg = f"LinkedIn vacancies saved={saved}"
-                uow.journal.log(profile, "linkedin_vacancies_done", msg)
+                self._log(profile, "linkedin_vacancies_done", msg)
                 current = uow.jobs.get_status(profile)
                 if current.status != JobStatus.WAITING_USER:
                     uow.jobs.set_status(profile, JobStatus.DONE, msg)
             except Exception as e:
-                uow.journal.log(
+                short = user_facing_browser_error(e)
+                self._log(
                     profile,
                     "linkedin_vacancies_error",
-                    f"{e}\n{traceback.format_exc()}",
+                    f"{short}\n{traceback.format_exc()[-1500:]}",
                     level="error",
                 )
-                uow.jobs.set_status(profile, JobStatus.ERROR, str(e))
+                uow.jobs.set_status(profile, JobStatus.ERROR, short)
                 self.alerts.notify_error(
-                    profile, str(e), event="linkedin_vacancies_error"
+                    profile, short, event="linkedin_vacancies_error"
                 )
             finally:
                 try:
@@ -464,7 +484,7 @@ class LinkedInBrowserGateway:
             "locale": "en-US",
             "viewport": {"width": 1280, "height": 900},
         }
-        browser = launch_chromium(p, headless=s.headless)
+        browser = launch_chromium(p, headless=s.effective_headless())
         if sp.exists():
             context = browser.new_context(storage_state=str(sp), **kwargs)
         else:
@@ -481,7 +501,7 @@ class LinkedInBrowserGateway:
                 if "/login" in url or page.locator(LI_SEL["auth_wall"]).first.is_visible():
                     msg = "LinkedIn: нужна авторизация (login wall)"
                     self.uow.jobs.set_status(profile, JobStatus.WAITING_USER, msg)
-                    self.uow.journal.log(
+                    self._log(
                         profile,
                         "linkedin_auth_wall",
                         url,
@@ -494,7 +514,7 @@ class LinkedInBrowserGateway:
             if page.locator(LI_SEL["checkpoint"]).count() > 0:
                 msg = "LinkedIn checkpoint / verification — войдите вручную"
                 self.uow.jobs.set_status(profile, JobStatus.WAITING_USER, msg)
-                self.uow.journal.log(
+                self._log(
                     profile, "linkedin_checkpoint", url, level="warn"
                 )
                 self.alerts.notify_captcha(
@@ -569,7 +589,7 @@ class LinkedInBrowserGateway:
             try:
                 if page.locator(LI_SEL["pending_btn"]).count() > 0:
                     if page.locator(LI_SEL["pending_btn"]).first.is_visible():
-                        self.uow.journal.log(
+                        self._log(
                             profile, "linkedin_skip_pending", url
                         )
                         return "pending", None
@@ -589,13 +609,13 @@ class LinkedInBrowserGateway:
                     pass
 
             if connect.count() == 0:
-                self.uow.journal.log(
+                self._log(
                     profile, "linkedin_skip_no_connect", url
                 )
                 return "skipped", "no Connect button"
 
             if launch.dry_run:
-                self.uow.journal.log(
+                self._log(
                     profile, "linkedin_dry_run_connect", url
                 )
                 return "dry_run", None
@@ -609,10 +629,10 @@ class LinkedInBrowserGateway:
                     send.first.click(timeout=4000)
             except Exception as e:
                 self._sel_fail(profile, "send_now", str(e))
-            self.uow.journal.log(profile, "linkedin_connected", f"{url} ({query})")
+            self._log(profile, "linkedin_connected", f"{url} ({query})")
             return "connected", None
         except Exception as e:
-            self.uow.journal.log(
+            self._log(
                 profile, "linkedin_connect_error", f"{url}: {e}", level="error"
             )
             return "error", str(e)[:300]

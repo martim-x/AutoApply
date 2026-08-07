@@ -1,6 +1,6 @@
 # Как пользоваться приложением
 
-Пошаговый гайд по Web UI AutoApply.
+Пошаговый гайд по Web UI auto-apply-app.
 
 См. также: [getting-started.md](./getting-started.md) · [priorities.md](./priorities.md) · [linkedin.md](./linkedin.md) · [docker-railway.md](./docker-railway.md).
 

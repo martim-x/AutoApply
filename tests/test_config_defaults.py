@@ -70,6 +70,7 @@ def test_hh_launch_soft_defaults_partial(tmp_path: Path):
     assert profile is not None
     assert profile.site == "hh.ru"
     assert profile.apply_limit == HH_LAUNCH_DEFAULTS["apply_limit"]
+    assert profile.vacancy_limit == HH_LAUNCH_DEFAULTS["vacancy_limit"]
     assert profile.salary_min_usd == 2200
     # optional keys filled → notifications may mention them
     assert isinstance(notes, list)
@@ -120,3 +121,13 @@ def test_next_run_at_rolls_forward():
 def test_validate_launch_defaults_dict():
     p = validate_launch_dict(dict(HH_LAUNCH_DEFAULTS))
     assert p.search_area == "1002"
+
+
+def test_default_app_name_and_sqlite_basename(monkeypatch):
+    monkeypatch.delenv("APP_NAME", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    s = Settings(_env_file=None)
+    assert s.app_name == "auto-apply-app"
+    assert "auto_apply_app.sqlite" in s.database_url
+    assert "rabota_apply" not in s.database_url
+

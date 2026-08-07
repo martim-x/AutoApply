@@ -33,6 +33,43 @@ def sanitize_playwright_browsers_path() -> str | None:
     return None
 
 
+def _looks_like_headed_display_failure(text: str) -> bool:
+    low = (text or "").lower()
+    return (
+        "missing x server" in low
+        or "without having a xserver" in low
+        or "platform failed to initialize" in low
+        or ("headless" in low and "false" in low and "launch" in low)
+    )
+
+
+def user_facing_browser_error(exc: BaseException, *, limit: int = 240) -> str:
+    """Short status/alert text — Playwright dumps must not flood the UI."""
+    text = str(exc or "").strip() or type(exc).__name__
+    low = text.lower()
+    if _looks_like_headed_display_failure(text):
+        return (
+            "Chromium не запустился: нет дисплея (headed mode). "
+            "В Docker/Railway нужен HEADLESS=true "
+            "(или ENABLE_REMOTE_BROWSER=true)."
+        )
+    if "failed to launch chromium" in low:
+        # Prefer first meaningful line; never return multi-line dumps.
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.lower().startswith("failed to launch"):
+                return (
+                    "Chromium не запустился. "
+                    "Проверьте HEADLESS / Playwright browsers."
+                )[:limit]
+            return line[:limit] if len(line) > limit else line
+    if len(text) > limit:
+        return text[: limit - 1] + "…"
+    return text
+
+
 def launch_chromium(playwright: Any, *, headless: bool = True):
     """
     Try bundled Playwright Chromium, then system Chrome / Chromium channels.
@@ -54,10 +91,17 @@ def launch_chromium(playwright: Any, *, headless: bool = True):
         except Exception as e:
             errors.append(f"{kwargs}: {e}")
             continue
-    hint = (
-        "Run: unset PLAYWRIGHT_BROWSERS_PATH && poetry run playwright install chromium\n"
-        "Or install Google Chrome for channel=chrome fallback."
-    )
+    joined = "\n".join(errors[-3:])
+    log.error("Chromium launch failed (headless=%s):\n%s", headless, joined)
+    # Short exception for UI/alerts; full attempt dumps stay in the log above.
+    if _looks_like_headed_display_failure(joined):
+        raise RuntimeError(
+            "Chromium не запустился: нет дисплея (headed mode). "
+            "В Docker/Railway нужен HEADLESS=true "
+            "(или ENABLE_REMOTE_BROWSER=true)."
+        )
     raise RuntimeError(
-        "Failed to launch Chromium.\n" + "\n".join(errors[-3:]) + "\n" + hint
+        "Chromium не запустился. "
+        "Проверьте HEADLESS / Playwright browsers "
+        "(полный лог — в journal сервера)."
     )

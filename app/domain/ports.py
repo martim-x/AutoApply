@@ -74,8 +74,16 @@ class JournalRepository(Protocol):
         message: str = "",
         level: str = "info",
         payload: dict[str, Any] | None = None,
+        *,
+        service: str | None = None,
     ) -> None: ...
-    def recent(self, profile: str | None = None, limit: int = 80) -> list[JournalEntry]: ...
+    def recent(
+        self,
+        profile: str | None = None,
+        limit: int = 80,
+        *,
+        service: str | None = None,
+    ) -> list[JournalEntry]: ...
 
 
 class LinkedInContactRepository(Protocol):
@@ -120,6 +128,10 @@ class UnitOfWork(Protocol):
     report_files: ReportFileRepository
 
     def stats(self, profile: str) -> dict[str, Any]: ...
+
+    def get_meta(self, key: str) -> str | None: ...
+
+    def set_meta(self, key: str, value: str) -> None: ...
 
 
 class BrowserGateway(Protocol):

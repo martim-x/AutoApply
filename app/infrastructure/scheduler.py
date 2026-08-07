@@ -69,7 +69,7 @@ def generate_scheduled_report(
     settings.ensure_dirs()
     payload = assemble_report(uow, settings, kind, profile)
     stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())
-    out = settings.reports_dir / f"autoapply-{kind}-{profile}-{stamp}.pdf"
+    out = settings.reports_dir / f"auto-apply-app-{kind}-{profile}-{stamp}.pdf"
     write_report_pdf(payload, out)
     uow.report_files.record(profile, kind, str(out), scheduled=scheduled)
     label = "scheduled" if scheduled else "manual"

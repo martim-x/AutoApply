@@ -50,7 +50,7 @@ def test_send_smtp_alert_calls_sender():
     s = _settings()
     sender = MagicMock(spec=SmtpSender)
     ok = send_smtp_alert(
-        s, subject="sub", body="body", sender=sender
+        s, subject="sub", body="body", html_body="<p>hi</p>", sender=sender
     )
     assert ok is True
     sender.send.assert_called_once()
@@ -58,6 +58,25 @@ def test_send_smtp_alert_calls_sender():
     assert kwargs["host"] == "smtp.test"
     assert kwargs["mail_to"] == "to@test"
     assert kwargs["subject"] == "sub"
+    assert kwargs["html_body"] == "<p>hi</p>"
+
+
+def test_alert_service_sends_html():
+    captured: dict = {}
+
+    def fake_send(settings, *, subject, body, html_body=None):
+        captured["subject"] = subject
+        captured["body"] = body
+        captured["html_body"] = html_body
+        return True
+
+    svc = AlertService(_settings(), send_fn=fake_send)
+    assert svc.notify("error", "boom <x>", profile="default") is True
+    assert "auto-apply-app" in captured["body"]
+    assert captured["html_body"]
+    assert "auto-apply-app" in captured["html_body"]
+    assert "prefers-color-scheme: dark" in captured["html_body"]
+    assert "&lt;x&gt;" in captured["html_body"]
 
 
 def test_send_smtp_skipped_when_disabled():

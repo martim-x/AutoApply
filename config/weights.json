@@ -1,9 +1,10 @@
 {
-  "version": 1,
+  "version": 2,
   "source": "Legend (Middle+ Python, FastAPI/Django, remote/hybrid, $2200–2800) + local vacancy samples",
   "thresholds": {
-    "high": 0.62,
-    "medium": 0.38
+    "high": 2.6,
+    "medium": 0.65,
+    "mode": "total_weight"
   },
   "signals": {
     "python_title_role": {

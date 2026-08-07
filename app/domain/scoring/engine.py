@@ -31,14 +31,15 @@ def load_weight_map(path: str | None = None) -> dict[str, Any]:
     p = Path(path) if path else DEFAULT_WEIGHTS_PATH
     if not p.exists():
         return {
-            "thresholds": {"high": 0.62, "medium": 0.38},
+            "thresholds": {"high": 2.6, "medium": 0.65, "mode": "total_weight"},
             "signals": {},
             "explain_templates": {},
         }
     data = json.loads(p.read_text(encoding="utf-8"))
     # precompile
     compiled: dict[str, Any] = {
-        "thresholds": data.get("thresholds") or {"high": 0.62, "medium": 0.38},
+        "thresholds": data.get("thresholds")
+        or {"high": 2.6, "medium": 0.65, "mode": "total_weight"},
         "explain_templates": data.get("explain_templates") or {},
         "signals": {},
         "source": data.get("source", ""),
@@ -215,13 +216,25 @@ def score_vacancy(
     score = int(round(max(0, min(100, norm * 100))))
 
     thresholds = wmap.get("thresholds") or {}
-    high_t = float(thresholds.get("high", 0.62))
-    med_t = float(thresholds.get("medium", 0.38))
-    # category from normalized total relative to useful range
-    strength = max(0.0, min(1.0, (total + 0.4) / 1.6))
-    if strength >= high_t and total >= 0.55:
+    # Categories are mapped from summed signal weights (not the 0..100 score).
+    # Default bands: python+remote (+ launch city/salary) ≈ MEDIUM;
+    # Legend stack extras (FastAPI/Django/queues/…) → HIGH.
+    # high=2.6 so location/salary bonuses alone do not skip the MEDIUM band.
+    # mode "strength" keeps the legacy 0..1 strength formula for old configs.
+    mode = str(thresholds.get("mode") or "total_weight").strip().lower()
+    high_t = float(thresholds.get("high", 2.6 if mode != "strength" else 0.62))
+    med_t = float(thresholds.get("medium", 0.65 if mode != "strength" else 0.38))
+    if mode == "strength":
+        strength = max(0.0, min(1.0, (total + 0.4) / 1.6))
+        if strength >= high_t and total >= 0.55:
+            category = FitCategory.HIGH
+        elif strength >= med_t and total >= 0.15:
+            category = FitCategory.MEDIUM
+        else:
+            category = FitCategory.LOW
+    elif total >= high_t:
         category = FitCategory.HIGH
-    elif strength >= med_t and total >= 0.15:
+    elif total >= med_t:
         category = FitCategory.MEDIUM
     else:
         category = FitCategory.LOW

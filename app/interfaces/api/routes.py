@@ -156,8 +156,19 @@ def create_api_router() -> APIRouter:
         request: Request,
         profile: str = Query(default="default"),
         limit: int = Query(default=60, ge=1, le=200),
+        service: str | None = Query(default=None),
     ) -> dict[str, Any]:
-        return {"logs": svc(request).recent_logs(profile, limit=limit)}
+        journal_service = (service or "").strip().lower() or None
+        if journal_service and journal_service not in ("hh", "linkedin"):
+            raise HTTPException(
+                status_code=400, detail="service must be hh or linkedin"
+            )
+        return {
+            "logs": svc(request).recent_logs(
+                profile, limit=limit, service=journal_service
+            ),
+            "service": journal_service,
+        }
 
     @router.post("/login")
     def login(body: ProfileBody, request: Request) -> dict[str, Any]:

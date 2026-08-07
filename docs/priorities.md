@@ -3,7 +3,7 @@
 Источник профиля кандидата: Obsidian  
 `/Users/timofejmarusko/Documents/VisualStudioCodeRepos/Obsidian/07 Legend`
 
-В AutoApply это зафиксировано в трёх местах:
+В auto-apply-app это зафиксировано в трёх местах:
 
 | Слой | Файл / механизм | Что кодирует |
 |------|-----------------|--------------|

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import time
 from collections.abc import Iterator
@@ -18,14 +19,77 @@ from app.domain.entities import (
     LinkedInVacancyLink,
     Profile,
     Vacancy,
+    normalize_journal_service,
 )
 from app.domain.enums import ApplyStatus, FitCategory, JobStatus
 
+log = logging.getLogger(__name__)
+
+LEGACY_SQLITE_BASENAME = "rabota_apply.sqlite"
+
+
+def unlink_sqlite_files(path: Path) -> None:
+    """Remove SQLite main DB and sidecar WAL/SHM files if present."""
+    path = Path(path)
+    for candidate in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
+        if candidate.exists() and candidate.is_file():
+            candidate.unlink()
+
+
+def adopt_legacy_sqlite_if_needed(path: Path) -> bool:
+    """
+    If the configured DB path is missing but a legacy rabota_apply.sqlite
+    sits in the same directory, rename it (and WAL/SHM sidecars) into place.
+
+    Returns True when a rename happened.
+    """
+    path = Path(path)
+    if path.exists():
+        return False
+    legacy = path.parent / LEGACY_SQLITE_BASENAME
+    if not legacy.is_file():
+        return False
+    try:
+        if legacy.resolve() == path.resolve():
+            return False
+    except OSError:
+        pass
+    path.parent.mkdir(parents=True, exist_ok=True)
+    log.info("Adopting legacy SQLite database: %s → %s", legacy, path)
+    legacy.rename(path)
+    for suffix in ("-wal", "-shm"):
+        old_side = Path(f"{legacy}{suffix}")
+        new_side = Path(f"{path}{suffix}")
+        if old_side.is_file() and not new_side.exists():
+            old_side.rename(new_side)
+    return True
+
+
+def prepare_sqlite_file(path: Path, *, reset: bool = False) -> bool:
+    """
+    Ensure parent directory exists; optionally wipe an existing DB.
+
+    Returns True when a brand-new empty DB will be created (missing file
+    or wiped via reset). Does not leave leftover requirement to copy a
+    local DB into Docker/Fly volumes — schema is applied on connect.
+
+    Before creating a fresh file, adopts legacy rabota_apply.sqlite if present.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not reset:
+        adopt_legacy_sqlite_if_needed(path)
+    if reset and (path.exists() or Path(f"{path}-wal").exists()):
+        log.warning("RESET_DB=true — deleting SQLite at %s", path)
+        unlink_sqlite_files(path)
+        return True
+    return not path.exists()
+
 
 class SqliteUnitOfWork:
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, path: Path, *, reset: bool = False) -> None:
+        self.path = Path(path)
+        fresh = prepare_sqlite_file(self.path, reset=reset)
         self.profiles = _ProfileRepo(self)
         self.vacancies = _VacancyRepo(self)
         self.applications = _ApplicationRepo(self)
@@ -35,6 +99,11 @@ class SqliteUnitOfWork:
         self.linkedin_vacancies = _LinkedInVacancyRepo(self)
         self.report_files = _ReportFileRepo(self)
         self._init_schema()
+        if fresh:
+            log.info(
+                "Initialized empty SQLite database at %s (schema + default profile)",
+                self.path,
+            )
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
@@ -101,7 +170,8 @@ class SqliteUnitOfWork:
                     level TEXT NOT NULL DEFAULT 'info',
                     event TEXT NOT NULL,
                     message TEXT,
-                    payload TEXT
+                    payload TEXT,
+                    service TEXT NOT NULL DEFAULT 'hh'
                 );
                 CREATE INDEX IF NOT EXISTS idx_journal_ts ON journal(ts);
                 CREATE TABLE IF NOT EXISTS job_state (
@@ -158,12 +228,50 @@ class SqliteUnitOfWork:
                     ON report_files(created_at);
                 """
             )
+            self._migrate_journal_service(c)
         # Bootstrap only when the DB has no profiles at all.
         if not self.profiles.list_profiles():
             self.profiles.ensure_profile("default")
 
+    @staticmethod
+    def _migrate_journal_service(c: sqlite3.Connection) -> None:
+        cols = {str(r[1]) for r in c.execute("PRAGMA table_info(journal)").fetchall()}
+        if "service" not in cols:
+            c.execute(
+                "ALTER TABLE journal ADD COLUMN service TEXT NOT NULL DEFAULT 'hh'"
+            )
+            c.execute(
+                """
+                UPDATE journal SET service='linkedin'
+                WHERE lower(event) LIKE 'linkedin_%'
+                """
+            )
+        c.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_journal_service
+                ON journal(profile, service, ts)
+            """
+        )
+
     def stats(self, profile: str) -> dict[str, Any]:
         return self.applications.stats(profile)
+
+    def get_meta(self, key: str) -> str | None:
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT value FROM meta WHERE key=?", (key,)
+            ).fetchone()
+            return str(row["value"]) if row and row["value"] is not None else None
+
+    def set_meta(self, key: str, value: str) -> None:
+        with self._conn() as c:
+            c.execute(
+                """
+                INSERT INTO meta(key, value) VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value
+                """,
+                (key, value),
+            )
 
 
 class _ProfileRepo:
@@ -610,12 +718,15 @@ class _JournalRepo:
         message: str = "",
         level: str = "info",
         payload: dict[str, Any] | None = None,
+        *,
+        service: str | None = None,
     ) -> None:
+        svc = normalize_journal_service(service, event=event)
         with self._uow._conn() as c:
             c.execute(
                 """
-                INSERT INTO journal(ts, profile, level, event, message, payload)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO journal(ts, profile, level, event, message, payload, service)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     time.time(),
@@ -624,18 +735,42 @@ class _JournalRepo:
                     event,
                     message,
                     json.dumps(payload or {}, ensure_ascii=False),
+                    svc,
                 ),
             )
 
-    def recent(self, profile: str | None = None, limit: int = 80) -> list[JournalEntry]:
+    def recent(
+        self,
+        profile: str | None = None,
+        limit: int = 80,
+        *,
+        service: str | None = None,
+    ) -> list[JournalEntry]:
+        svc = normalize_journal_service(service) if service else None
         with self._uow._conn() as c:
-            if profile:
+            if profile and svc:
+                rows = c.execute(
+                    """
+                    SELECT * FROM journal WHERE profile=? AND service=?
+                    ORDER BY ts DESC LIMIT ?
+                    """,
+                    (profile, svc, limit),
+                ).fetchall()
+            elif profile:
                 rows = c.execute(
                     """
                     SELECT * FROM journal WHERE profile=?
                     ORDER BY ts DESC LIMIT ?
                     """,
                     (profile, limit),
+                ).fetchall()
+            elif svc:
+                rows = c.execute(
+                    """
+                    SELECT * FROM journal WHERE service=?
+                    ORDER BY ts DESC LIMIT ?
+                    """,
+                    (svc, limit),
                 ).fetchall()
             else:
                 rows = c.execute(
@@ -644,6 +779,7 @@ class _JournalRepo:
                 ).fetchall()
         out: list[JournalEntry] = []
         for r in rows:
+            keys = r.keys()
             out.append(
                 JournalEntry(
                     id=r["id"],
@@ -653,6 +789,10 @@ class _JournalRepo:
                     event=r["event"],
                     message=r["message"] or "",
                     payload=json.loads(r["payload"] or "{}"),
+                    service=normalize_journal_service(
+                        r["service"] if "service" in keys else None,
+                        event=r["event"],
+                    ),
                 )
             )
         return out

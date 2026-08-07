@@ -29,7 +29,9 @@ def test_medium_partial():
         "Backend engineer",
         "Python, remote-first team, REST APIs, PostgreSQL",
     )
-    assert r.category in (FitCategory.HIGH, FitCategory.MEDIUM)
+    # python + remote (+ mild stack) must land in MEDIUM, not jump to HIGH
+    assert r.category == FitCategory.MEDIUM
+    assert r.score >= 40
 
 
 def test_low_weak():

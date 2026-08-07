@@ -89,6 +89,21 @@ class CategoryResult:
     total_weight: float = 0.0
 
 
+JOURNAL_SERVICES = frozenset({"hh", "linkedin"})
+
+
+def normalize_journal_service(
+    service: str | None = None, *, event: str = ""
+) -> str:
+    """Map to hh|linkedin; infer linkedin from event name when omitted."""
+    if service in JOURNAL_SERVICES:
+        return service  # type: ignore[return-value]
+    ev = (event or "").lower()
+    if ev.startswith("linkedin_"):
+        return "linkedin"
+    return "hh"
+
+
 @dataclass
 class JournalEntry:
     profile: str
@@ -98,6 +113,7 @@ class JournalEntry:
     payload: dict[str, Any] = field(default_factory=dict)
     ts: float | None = None
     id: int | None = None
+    service: str = "hh"
 
 
 @dataclass

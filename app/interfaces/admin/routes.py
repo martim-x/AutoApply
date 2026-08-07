@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hmac
 import logging
 import os
 import tempfile
@@ -14,6 +13,12 @@ from fastapi.templating import Jinja2Templates
 from starlette.status import HTTP_303_SEE_OTHER, HTTP_404_NOT_FOUND
 
 from app.infrastructure import settings as settings_mod
+from app.infrastructure.gate_auth import (
+    ADMIN_SESSION_KEY,
+    clear_auth_cookies,
+    const_eq,
+    set_auth_cookies,
+)
 from app.infrastructure.settings import get_settings
 
 log = logging.getLogger(__name__)
@@ -21,7 +26,7 @@ log = logging.getLogger(__name__)
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 TEMPLATES = Jinja2Templates(directory=str(WEB_DIR / "templates"))
 
-SESSION_KEY = "admin_authed"
+SESSION_KEY = ADMIN_SESSION_KEY
 
 
 def _env_path() -> Path:
@@ -87,8 +92,8 @@ def create_admin_router() -> APIRouter:
         settings = request.app.state.settings
         expect_user = (settings.admin_user or "").strip()
         expect_pass = settings.admin_password or ""
-        user_ok = _const_eq(name.strip(), expect_user)
-        pass_ok = _const_eq(password, expect_pass)
+        user_ok = const_eq(name.strip(), expect_user)
+        pass_ok = const_eq(password, expect_pass)
         if not (user_ok and pass_ok):
             return TEMPLATES.TemplateResponse(
                 request,
@@ -100,15 +105,21 @@ def create_admin_router() -> APIRouter:
                 status_code=401,
             )
         request.session[SESSION_KEY] = True
-        return RedirectResponse(url="/admin/env", status_code=HTTP_303_SEE_OTHER)
+        response = RedirectResponse(url="/admin/env", status_code=HTTP_303_SEE_OTHER)
+        # Share identity with the owner gate (nexus_token + refresh_token).
+        set_auth_cookies(response, settings, expect_user)
+        return response
 
     @router.post("/admin/logout")
     def admin_logout(request: Request) -> Response:
         denied = _require_enabled(request)
         if denied:
             return denied
+        settings = request.app.state.settings
         request.session.clear()
-        return _login_redirect()
+        response = _login_redirect()
+        clear_auth_cookies(response, settings)
+        return response
 
     @router.get("/admin/env", response_class=HTMLResponse)
     def admin_env_get(request: Request) -> Response:
@@ -168,15 +179,6 @@ def create_admin_router() -> APIRouter:
         )
 
     return router
-
-
-def _const_eq(left: str, right: str) -> bool:
-    """Constant-time compare; False when lengths differ (compare_digest raises)."""
-    a = left.encode("utf-8")
-    b = right.encode("utf-8")
-    if len(a) != len(b):
-        return False
-    return hmac.compare_digest(a, b)
 
 
 def _read_env_file() -> str:

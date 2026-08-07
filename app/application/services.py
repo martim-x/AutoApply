@@ -112,9 +112,69 @@ class AppService:
 
     # ── GetStats / status ─────────────────────────────────────
 
+    def ensure_vacancies_rescored(self) -> int:
+        """Re-apply weight map categories when thresholds/version change."""
+        import json
+
+        from app.domain.categorize import categorize_vacancy
+        from app.domain.launch_profile import load_launch_profile
+        from app.domain.scoring.engine import load_weight_map, reload_weight_map
+
+        reload_weight_map()
+        wmap = load_weight_map()
+        stamp = json.dumps(
+            {"v": wmap.get("version"), "t": wmap.get("thresholds")},
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        if self.uow.get_meta("weights_rescore_stamp") == stamp:
+            return 0
+
+        launch = load_launch_profile(self.settings.launch_path)
+        location = launch.location if launch else None
+        updated = 0
+        for prof in self.uow.profiles.list_profiles():
+            for vac in self.uow.vacancies.list_for_profile(prof.name, limit=50_000):
+                cat = categorize_vacancy(
+                    vac.title or "",
+                    vac.description or "",
+                    url=vac.url or "",
+                    location=location,
+                    launch=launch,
+                )
+                new_cat = cat.category
+                new_score = int(cat.score)
+                new_reason = cat.explanation or cat.reason or ""
+                old_cat = (
+                    vac.category.value
+                    if hasattr(vac.category, "value")
+                    else str(vac.category)
+                )
+                if (
+                    old_cat == new_cat.value
+                    and int(vac.score or 0) == new_score
+                    and (vac.category_reason or "") == new_reason
+                ):
+                    continue
+                vac.category = new_cat
+                vac.score = new_score
+                vac.category_reason = new_reason
+                self.uow.vacancies.upsert(vac)
+                updated += 1
+
+        self.uow.set_meta("weights_rescore_stamp", stamp)
+        if updated:
+            self.uow.journal.log(
+                "system",
+                "vacancies_rescored",
+                f"updated={updated} stamp={stamp}",
+            )
+        return updated
+
     def get_status(self, profile: str = "default") -> dict[str, Any]:
         from pathlib import Path
 
+        self.ensure_vacancies_rescored()
         profile = self._profile(profile)
         st = self.uow.jobs.get_status(profile)
         stats = self.uow.stats(profile)
@@ -169,6 +229,7 @@ class AppService:
         }
 
     def list_vacancies(self, profile: str = "default", limit: int = 100) -> list[dict[str, Any]]:
+        self.ensure_vacancies_rescored()
         profile = self._profile(profile)
         out = []
         for v in self.uow.vacancies.list_for_profile(profile, limit=limit):
@@ -232,8 +293,19 @@ class AppService:
         data["stored_score"] = vac.score
         return data
 
-    def recent_logs(self, profile: str = "default", limit: int = 60) -> list[dict[str, Any]]:
-        entries = self.uow.journal.recent(self._profile(profile), limit=limit)
+    def recent_logs(
+        self,
+        profile: str = "default",
+        limit: int = 60,
+        *,
+        service: str | None = None,
+    ) -> list[dict[str, Any]]:
+        from app.domain.entities import normalize_journal_service
+
+        svc = normalize_journal_service(service) if service else None
+        entries = self.uow.journal.recent(
+            self._profile(profile), limit=limit, service=svc
+        )
         result = []
         for e in entries:
             when = (
@@ -248,6 +320,7 @@ class AppService:
                     "level": e.level,
                     "event": e.event,
                     "message": e.message,
+                    "service": e.service,
                 }
             )
         return result
@@ -350,6 +423,7 @@ class AppService:
             if launch
             else s.search_list(),
             "search_area": launch.search_area if launch else s.search_area,
+            "vacancy_limit": launch.vacancy_limit if launch else s.vacancy_limit,
             "apply_limit": launch.apply_limit if launch else s.apply_limit,
             "headless": s.headless,
             "dry_run": launch.dry_run if launch else s.dry_run,

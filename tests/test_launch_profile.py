@@ -27,6 +27,7 @@ queries: python-разработчик, python-developer
 remote_or_hybrid: true
 skip_gov: true
 python_keywords: true
+vacancy_limit: 40
 apply_limit: 25
 dry_run: true
 salary_min_usd: 2200
@@ -45,6 +46,8 @@ def test_parse_strict_text_ok():
     assert profile.base_url == "https://rabota.by"
     assert profile.dry_run is True
     assert len(profile.queries) == 2
+    assert profile.vacancy_limit == 40
+    assert profile.apply_limit == 25
     assert profile.salary_min_usd == 2200
     assert profile.salary_max_usd == 2800
     assert profile.level == "middle+"
@@ -96,6 +99,25 @@ def test_roundtrip_text():
     assert again.site == p.site
     assert again.location.city == p.location.city
     assert again.queries == p.queries
+    assert again.vacancy_limit == p.vacancy_limit
+    assert again.apply_limit == p.apply_limit
+
+
+def test_legacy_apply_limit_becomes_vacancy_limit(tmp_path):
+    """Old launch.json without vacancy_limit: search cap mirrors apply_limit."""
+    from app.domain.launch_profile import load_launch_profile_with_notes
+
+    path = tmp_path / "launch.json"
+    path.write_text(
+        '{"site":"rabota.by","location":{"country":"Беларусь","city":"Минск"},'
+        '"queries":["python"],"apply_limit":17}',
+        encoding="utf-8",
+    )
+    profile, notes = load_launch_profile_with_notes(path)
+    assert profile is not None
+    assert profile.apply_limit == 17
+    assert profile.vacancy_limit == 17
+    assert any("vacancy_limit" in n for n in notes)
 
 
 def test_location_filter_other_city():

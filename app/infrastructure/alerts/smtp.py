@@ -27,6 +27,7 @@ class SmtpSender:
         mail_to: str,
         subject: str,
         body: str,
+        html_body: str | None = None,
         use_tls: bool = True,
         timeout: float = SMTP_TIMEOUT_SEC,
     ) -> None:
@@ -34,7 +35,9 @@ class SmtpSender:
         msg["Subject"] = subject
         msg["From"] = mail_from
         msg["To"] = mail_to
-        msg.set_content(body)
+        msg.set_content(body or "")
+        if html_body:
+            msg.add_alternative(html_body, subtype="html")
 
         # Port 465 → implicit SSL (e.g. smtp.yandex.ru); 587 → STARTTLS.
         if port == 465:
@@ -62,6 +65,7 @@ def send_smtp_alert(
     *,
     subject: str,
     body: str,
+    html_body: str | None = None,
     sender: SmtpSender | None = None,
 ) -> bool:
     """
@@ -95,6 +99,7 @@ def send_smtp_alert(
             mail_to=mail_to,
             subject=subject,
             body=body,
+            html_body=html_body,
             use_tls=use_tls,
         )
         return True

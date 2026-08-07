@@ -5,7 +5,7 @@
 **Деплой** — отдельно:
 
 - [Fly.io GitHub integration](https://fly.io/docs/launch/continuous-deployment-with-github/) (автодеплой из репозитория), или
-- вручную: `fly deploy --app autoapply`, или
+- вручную: `fly deploy --app auto-apply-app`, или
 - [Railway](./docker-railway.md) с подключением GitHub.
 
 Конфиг приложения: [`fly.toml`](../fly.toml) (Dockerfile, порт **8080**, volume `/app/data`, **2 GB** RAM под Playwright).
@@ -19,12 +19,14 @@
 brew install flyctl   # или curl -L https://fly.io/install.sh | sh
 fly auth login
 
-fly apps create autoapply
+fly apps create auto-apply-app
 # том для SQLite / sessions / reports (регион = primary_region в fly.toml)
-fly volumes create autoapply_data --region ams --size 3 --app autoapply
+fly volumes create auto_apply_app_data --region ams --size 3 --app auto-apply-app
 ```
 
-Публичный URL после деплоя: **https://autoapply.fly.dev** (если имя приложения свободно).
+Публичный URL после деплоя: **https://auto-apply-app.fly.dev** (если имя приложения свободно).
+
+> **Уже есть приложение `autoapply` (или другое имя)?** Имя на Fly **нельзя** просто переименовать в `fly.toml` — нужно либо продолжать деплоить в существующий app (`fly deploy --app <старое-имя>` и поправить `app =` / `[[mounts]].source` под фактические имена), либо создать новый `auto-apply-app` и перенести volume/данные. Volume `autoapply_data` тоже остаётся со старым именем, пока не создадите новый `auto_apply_app_data`.
 
 ---
 
@@ -40,7 +42,7 @@ fly secrets set \
   ADMIN_USER='your_admin' \
   ADMIN_PASSWORD='strong_password' \
   ADMIN_SECRET="$(openssl rand -hex 32)" \
-  --app autoapply
+  --app auto-apply-app
 
 # SMTP-алерты (пример Yandex)
 fly secrets set \
@@ -52,7 +54,7 @@ fly secrets set \
   ALERT_SMTP_FROM='you@example.com' \
   ALERT_SMTP_TO='you@example.com' \
   ALERT_SMTP_TLS=true \
-  --app autoapply
+  --app auto-apply-app
 
 # Расписания (по желанию)
 fly secrets set \
@@ -61,22 +63,24 @@ fly secrets set \
   PARSE_SCHEDULE_ENABLED=true \
   PARSE_SCHEDULE_TIMEZONE=Europe/Minsk \
   PARSE_SCHEDULE_TIMES=12:00,00:00 \
-  --app autoapply
+  --app auto-apply-app
 ```
 
 То же можно сделать в [Fly dashboard](https://fly.io/dashboard) → приложение → **Secrets**.
 
 Пароль из локального `.env` в git **не копировать**. Подставьте значения вручную.
 
-Проверка: `fly secrets list --app autoapply`
+Проверка: `fly secrets list --app auto-apply-app`
 
 Локальный / ручной деплой:
 
 ```bash
-fly deploy --app autoapply
+fly deploy --app auto-apply-app
 ```
 
 Логин в UI: **Войти (remote)** → screencast → **Сохранить сессию**. Данные живут на volume `/app/data`.
+
+При первом старте с новым `DATABASE_URL=…/auto_apply_app.sqlite` приложение само переименует legacy `rabota_apply.sqlite` на volume, если новый файл ещё отсутствует.
 
 ---
 

@@ -1,13 +1,17 @@
-# Fly.io — AutoApply (Playwright + FastAPI + SQLite)
+# Fly.io — auto-apply-app (Playwright + FastAPI + SQLite)
 # Docs: docs/fly-io.md
 #
 # First-time setup:
-#   fly apps create autoapply
-#   fly volumes create autoapply_data --region ams --size 3
+#   fly apps create auto-apply-app
+#   fly volumes create auto_apply_app_data --region ams --size 3
 #   fly secrets set ...   # see docs/fly-io.md
 #   fly deploy
+#
+# If you already created an app named "autoapply" (or similar), either:
+#   - keep deploying to that existing app name, or
+#   - create a new app "auto-apply-app" and migrate the volume/data.
 
-app = "autoapply"
+app = "auto-apply-app"
 primary_region = "ams"
 
 [build]
@@ -17,7 +21,7 @@ primary_region = "ams"
   HEADLESS = "true"
   ENABLE_REMOTE_BROWSER = "true"
   DATA_DIR = "/app/data"
-  DATABASE_URL = "sqlite:////app/data/rabota_apply.sqlite"
+  DATABASE_URL = "sqlite:////app/data/auto_apply_app.sqlite"
   PLAYWRIGHT_BROWSERS_PATH = "/ms-playwright"
   PORT = "8080"
   HOST = "0.0.0.0"
@@ -44,5 +48,5 @@ primary_region = "ams"
   cpus = 2
 
 [[mounts]]
-  source = "autoapply_data"
+  source = "auto_apply_app_data"
   destination = "/app/data"

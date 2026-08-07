@@ -1,20 +1,24 @@
 services:
-  rabota_apply:
+  auto-apply-app:
     build: .
+    container_name: auto-apply-app
     ports:
       - "${PORT:-8080}:8080"
     env_file:
       - .env
     environment:
       # Override paths inside container; secrets still from .env
-      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/rabota_apply.sqlite}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/auto_apply_app.sqlite}
       DATA_DIR: /app/data
       LETTER_PATH: /app/letter_universal.txt
       LAUNCH_PATH: /app/config/launch.json
       LINKEDIN_LAUNCH_PATH: /app/config/linkedin.launch.json
       PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
-      HEADLESS: ${HEADLESS:-true}
-      ENABLE_REMOTE_BROWSER: ${ENABLE_REMOTE_BROWSER:-true}
+      # Hardcode defaults — do NOT use ${HEADLESS:-true}: project .env often has
+      # HEADLESS=false for local (non-Docker) DX, and Compose would substitute that
+      # into the container → headed Chromium fails (no X server).
+      HEADLESS: "true"
+      ENABLE_REMOTE_BROWSER: "true"
       HOST: 0.0.0.0
       PORT: 8080
       REPORT_SCHEDULE_ENABLED: ${REPORT_SCHEDULE_ENABLED:-false}
@@ -25,7 +29,9 @@ services:
       PARSE_SCHEDULE_TIMEZONE: ${PARSE_SCHEDULE_TIMEZONE:-Europe/Minsk}
       PARSE_SCHEDULE_TIMES: ${PARSE_SCHEDULE_TIMES:-12:00,00:00}
     volumes:
-      # Persist sqlite + Playwright sessions + PDF reports
+      # Persist sqlite + Playwright sessions + PDF reports.
+      # Fresh empty DB: delete ./data/auto_apply_app.sqlite (or set RESET_DB=true once).
+      # Legacy rabota_apply.sqlite is renamed to auto_apply_app.sqlite on startup if needed.
       - ./data:/app/data
       - ./letter_universal.txt:/app/letter_universal.txt:ro
       # So /admin can edit .env and changes survive restart

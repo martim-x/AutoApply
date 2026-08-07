@@ -1,4 +1,4 @@
-"""RABOTA_APPLY monolith entrypoint."""
+"""auto-apply-app monolith entrypoint."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from app.infrastructure.settings import get_settings
 from app.interfaces.admin import create_admin_router
 from app.interfaces.api import create_api_router
 from app.interfaces.api.reports_routes import create_reports_router
+from app.interfaces.auth import GateAuthMiddleware, create_auth_router
 
 # Avoid Cursor sandbox PLAYWRIGHT_BROWSERS_PATH (wrong arch / incomplete cache)
 sanitize_playwright_browsers_path()
@@ -43,6 +44,10 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        try:
+            service.ensure_vacancies_rescored()
+        except Exception:
+            pass
         if settings.report_schedule_enabled:
             scheduler.start()
         if settings.parse_schedule_enabled:
@@ -60,16 +65,19 @@ def create_app() -> FastAPI:
     app.state.parse_scheduler = parse_scheduler
     app.state.service = service
 
-    # Signed cookie sessions for /admin (only useful when ADMIN_USER/PASSWORD set)
+    # Gate auth (inner) + signed sessions for /admin (outer — runs first).
+    # Request flow: SessionMiddleware → GateAuthMiddleware → routes
+    app.add_middleware(GateAuthMiddleware, settings=settings)
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.session_secret(),
         session_cookie="aa_admin_session",
         same_site="lax",
-        https_only=False,
+        https_only=bool(settings.auth_cookie_secure),
         max_age=60 * 60 * 12,
     )
 
+    app.include_router(create_auth_router())
     app.include_router(create_api_router())
     app.include_router(create_reports_router())
     app.include_router(create_admin_router())

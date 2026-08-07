@@ -13,7 +13,7 @@ from typing import Any
 
 from app.domain.enums import JobStatus
 from app.domain.ports import UnitOfWork
-from app.infrastructure.browser.launch import launch_chromium
+from app.infrastructure.browser.launch import launch_chromium, user_facing_browser_error
 from app.infrastructure.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -142,7 +142,9 @@ class RemoteBrowserSession:
             JobStatus.LOGGING_IN,
             "Remote browser: открывается сессия…",
         )
-        uow.journal.log(profile, "remote_browser_start", self.start_url)
+        uow.journal.log(
+            profile, "remote_browser_start", self.start_url, service=self.workspace
+        )
 
         try:
             with sync_playwright() as p:
@@ -196,16 +198,18 @@ class RemoteBrowserSession:
                 except Exception:
                     pass
         except Exception as e:
-            self._error = str(e)
+            self._error = user_facing_browser_error(e)
             log.exception("remote browser failed for %s", profile)
+            short = self._error
             uow.journal.log(
                 profile,
                 "remote_browser_error",
-                str(e),
+                short,
                 level="error",
-                payload={"tb": traceback.format_exc()[-2000:]},
+                payload={"tb": traceback.format_exc()[-2000:], "raw": str(e)[:2000]},
+                service=self.workspace,
             )
-            uow.jobs.set_status(profile, JobStatus.ERROR, f"Remote browser: {e}")
+            uow.jobs.set_status(profile, JobStatus.ERROR, f"Remote browser: {short}")
             self._ready.set()
             return
 
@@ -217,7 +221,12 @@ class RemoteBrowserSession:
             )
         else:
             uow.jobs.set_status(profile, JobStatus.IDLE, "Remote browser закрыт")
-        uow.journal.log(profile, "remote_browser_stop", "сессия завершена")
+        uow.journal.log(
+            profile,
+            "remote_browser_stop",
+            "сессия завершена",
+            service=self.workspace,
+        )
 
     def _on_frame(self, params: dict[str, Any]) -> None:
         sid = params.get("sessionId")
@@ -261,7 +270,9 @@ class RemoteBrowserSession:
                     if self.workspace == "linkedin"
                     else "session_saved"
                 )
-                self.uow.journal.log(self.profile, event, f"Сессия → {sp}")
+                self.uow.journal.log(
+                    self.profile, event, f"Сессия → {sp}", service=self.workspace
+                )
                 self.uow.jobs.set_status(
                     self.profile,
                     JobStatus.WAITING_USER,
@@ -269,7 +280,11 @@ class RemoteBrowserSession:
                 )
             except Exception as e:
                 self.uow.journal.log(
-                    self.profile, "session_save_fail", str(e), level="error"
+                    self.profile,
+                    "session_save_fail",
+                    str(e),
+                    level="error",
+                    service=self.workspace,
                 )
             return True
         if kind == "navigate":
@@ -347,9 +362,7 @@ class RemoteBrowserSession:
             "locale": "en-US" if self.workspace == "linkedin" else "ru-RU",
             "viewport": dict(VIEWPORT),
         }
-        # Remote UI works headless; force headless when flag set or HEADLESS=true
-        headless = s.headless or s.enable_remote_browser
-        browser = launch_chromium(p, headless=headless)
+        browser = launch_chromium(p, headless=s.effective_headless())
         if sp.exists():
             context = browser.new_context(storage_state=str(sp), **kwargs)
         else:

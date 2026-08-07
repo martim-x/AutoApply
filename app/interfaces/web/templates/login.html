@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme-pref="system">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>{{ app_name }} — Login</title>
+  <script>
+    (function () {
+      try {
+        var pref = localStorage.getItem("aa-theme") || "system";
+        var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        var resolved = pref === "system" ? (dark ? "dark" : "light") : pref;
+        document.documentElement.setAttribute("data-theme", resolved);
+      } catch (e) {}
+      try {
+        var lang = localStorage.getItem("aa-lang");
+        if (lang !== "ru" && lang !== "en") {
+          var nav = (navigator.language || "").toLowerCase();
+          lang = nav.indexOf("ru") === 0 ? "ru" : (nav ? "en" : "ru");
+        }
+        document.documentElement.setAttribute("lang", lang);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="admin-body">
+  <main class="admin-shell">
+    <header class="admin-header">
+      <p class="admin-brand">{{ app_name }}</p>
+      <h1 data-i18n-login="title">Вход</h1>
+      <p class="admin-lead" data-i18n-login="lead">Доступ только для владельца сервиса</p>
+    </header>
+    {% if error %}
+    <p class="admin-flash admin-flash-error" role="alert" data-i18n-login="error">Неверный логин или пароль</p>
+    {% endif %}
+    <form class="admin-card" method="post" action="/login" autocomplete="on">
+      <label class="admin-field">
+        <span data-i18n-login="user">Имя</span>
+        <input type="text" name="name" required autofocus autocomplete="username" />
+      </label>
+      <label class="admin-field">
+        <span data-i18n-login="pass">Пароль</span>
+        <input type="password" name="password" required autocomplete="current-password" />
+      </label>
+      <button type="submit" class="primary admin-submit" data-i18n-login="submit">Войти</button>
+    </form>
+  </main>
+  <script>
+    (function () {
+      var dict = {
+        ru: {
+          title: "Вход",
+          lead: "Доступ только для владельца сервиса",
+          error: "Неверный логин или пароль",
+          user: "Имя",
+          pass: "Пароль",
+          submit: "Войти"
+        },
+        en: {
+          title: "Sign in",
+          lead: "Owner access only",
+          error: "Invalid username or password",
+          user: "Username",
+          pass: "Password",
+          submit: "Sign in"
+        }
+      };
+      var lang = document.documentElement.getAttribute("lang") === "en" ? "en" : "ru";
+      var t = dict[lang];
+      document.querySelectorAll("[data-i18n-login]").forEach(function (el) {
+        var key = el.getAttribute("data-i18n-login");
+        if (t[key]) el.textContent = t[key];
+      });
+      document.title = "{{ app_name }} — " + (lang === "en" ? "Login" : "Вход");
+    })();
+  </script>
+</body>
+</html>

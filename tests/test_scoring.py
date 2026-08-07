@@ -35,9 +35,32 @@ def test_medium_partial_python_hybrid():
         "Backend engineer",
         "Python, hybrid format, REST APIs, PostgreSQL",
     )
-    assert r.category in (FitCategory.HIGH, FitCategory.MEDIUM)
+    assert r.category == FitCategory.MEDIUM
     ids = {c.id for c in r.contributions}
     assert "python_stack" in ids or "postgres_match" in ids
+
+
+def test_medium_survives_launch_location_bonus():
+    """City/salary launch bonuses must not skip MEDIUM into HIGH alone."""
+    from app.domain.launch_profile import LaunchProfile, LocationPref
+
+    launch = LaunchProfile(
+        site="rabota.by",
+        queries=["python"],
+        location=LocationPref(country="Беларусь", city="Минск", strict=True),
+        salary_min_usd=2200,
+        salary_max_usd=2800,
+        level="middle+",
+    )
+    r = score_vacancy(
+        "Backend engineer",
+        "Python, remote-first team in Minsk. REST APIs, PostgreSQL.",
+        launch=launch,
+        location=launch.location,
+    )
+    assert r.category == FitCategory.MEDIUM
+    assert r.total_weight < 2.6
+    assert any(c.id == "location_city_hit" for c in r.contributions)
 
 
 def test_gov_hard_floor():

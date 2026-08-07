@@ -1,6 +1,6 @@
-# auto-apply
+# auto-apply-app
 
-Личный монолит для поиска вакансий и автооткликов на **rabota.by / hh.ru**: Web UI, REST API, Playwright-воркер, SQLite.
+Личный монолит для поиска вакансий и автооткликов на **rabota.by / hh.ru / LinkedIn**: Web UI, REST API, Playwright-воркер, SQLite.
 
 Скоринг и фильтры заточены под профиль из Obsidian **`07 Legend`** (Middle+ Python, FastAPI/Django, remote/hybrid, вилка **$2200–2800**).
 
@@ -97,6 +97,13 @@ docker compose up --build
 **Деплой:** Fly.io GitHub integration или `fly deploy` вручную (`fly.toml`); либо Railway с GitHub connect. Секреты приложения — `fly secrets set …` / Fly dashboard (не `FLY_API_TOKEN` в GitHub Actions). См. **[docs/fly-io.md](docs/fly-io.md)**.
 
 **Railway:** Deploy `Dockerfile` → Variables: `HEADLESS=true`, `ENABLE_REMOTE_BROWSER=true`, плюс `ADMIN_USER` / `ADMIN_PASSWORD` / `ADMIN_SECRET` → volume `/app/data` → логин через remote screencast в UI. Редактор `.env`: `/admin` (если `ADMIN_*` заданы; иначе 404). Подробнее — [docs/docker-railway.md](docs/docker-railway.md), [docs/getting-started.md](docs/getting-started.md).
+
+Сгенерировать `ADMIN_SECRET` локально:
+
+```bash
+./scripts/gen_admin_secret.sh
+# или: openssl rand -hex 32
+```
 
 ---
 

@@ -1,6 +1,6 @@
 # Технические решения
 
-Зафиксированные решения AutoApply: зачем так сделано и где смотреть код.
+Зафиксированные решения auto-apply-app: зачем так сделано и где смотреть код.
 
 См. также: [getting-started.md](./getting-started.md) · [user-guide.md](./user-guide.md) · [priorities.md](./priorities.md).
 
@@ -104,9 +104,10 @@ SERP → мягкий pre-filter (gov)
 
 ## 8. Хранение данных
 
-**Решение сейчас:** SQLite (`DATABASE_URL=sqlite:///./data/rabota_apply.sqlite`).
+**Решение сейчас:** SQLite (`DATABASE_URL=sqlite:///./data/auto_apply_app.sqlite`).
 
-**Заготовка:** тот же UnitOfWork; Postgres URL пока → `NotImplementedError` с подсказкой.
+**Postgres:** тот же UnitOfWork; `DATABASE_URL=postgresql://…` (Railway)
+или `postgresql+psycopg://…` → `PostgresUnitOfWork` (sync SQLAlchemy engine + psycopg3).
 
 **Почему SQLite:** zero-ops локально, файл в `./data`, удобно бэкапить вместе с сессиями.
 

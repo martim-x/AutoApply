@@ -22,7 +22,7 @@ from app.domain.parse_dedup import (
     should_stop_old_streak,
 )
 from app.domain.ports import UnitOfWork
-from app.infrastructure.browser.launch import launch_chromium
+from app.infrastructure.browser.launch import launch_chromium, user_facing_browser_error
 from app.infrastructure.browser.selectors import SEL
 from app.infrastructure.settings import Settings
 
@@ -68,6 +68,7 @@ class PlaywrightBrowserGateway:
                 "require_python_keywords": s.require_python_keywords,
                 "location": None,
                 "launch": None,
+                "vacancy_limit": s.vacancy_limit,
                 "apply_limit": s.apply_limit,
                 "dry_run": s.dry_run,
             }
@@ -77,6 +78,7 @@ class PlaywrightBrowserGateway:
             "require_python_keywords": lp.require_python_keywords,
             "location": lp.location,
             "launch": lp,
+            "vacancy_limit": lp.vacancy_limit,
             "apply_limit": lp.apply_limit,
             "dry_run": lp.dry_run,
         }
@@ -147,22 +149,22 @@ class PlaywrightBrowserGateway:
 
         site = launch.site if launch else s.base_url
         area = self._search_area(launch)
+        vacancy_limit = int(flags["vacancy_limit"])
         uow.jobs.set_status(
             profile,
             JobStatus.SEARCHING,
-            f"Поиск вакансий… ({site}, area={area})",
+            f"Поиск вакансий… до {vacancy_limit} ({site}, area={area})",
         )
         queries = self._search_queries(launch)
         uow.journal.log(
             profile,
             "search_start",
-            f"site={site} area={area} queries={queries}",
+            f"site={site} area={area} vacancy_limit={vacancy_limit} queries={queries}",
         )
         limiter = RateLimiter(s.min_action_interval, s.jitter)
         found = 0
         kept = 0
         processed = 0
-        apply_limit = int(flags["apply_limit"])
         early_stop = bool(s.parse_early_stop_enabled)
         streak_stop = int(s.parse_old_streak_stop) if early_stop else 0
         known_urls, known_ids = uow.vacancies.known_keys(profile)
@@ -188,7 +190,8 @@ class PlaywrightBrowserGateway:
                     uow.jobs.set_status(
                         profile,
                         JobStatus.SEARCHING,
-                        f"Поиск: {query} ({qi+1}/{len(queries)})",
+                        f"Поиск: {query} ({qi+1}/{len(queries)}) — "
+                        f"{kept}/{vacancy_limit} подходящих",
                         stats=checkpoint,
                     )
                     try:
@@ -214,9 +217,9 @@ class PlaywrightBrowserGateway:
 
                         old_streak = 0
                         for item in self._collect_links(
-                            page, limit=max(apply_limit * 2, 50)
+                            page, limit=max(vacancy_limit * 2, 50)
                         ):
-                            if stop_flag.stopped or kept >= apply_limit:
+                            if stop_flag.stopped or kept >= vacancy_limit:
                                 break
                             path = urlparse(item["url"]).path
                             if path in seen:
@@ -386,7 +389,7 @@ class PlaywrightBrowserGateway:
                                 )
                                 continue
 
-                        if kept >= apply_limit or aborted_blocker:
+                        if kept >= vacancy_limit or aborted_blocker:
                             break
                     except Exception as query_exc:
                         # Per-query isolation: keep other queries / saved vacancies
@@ -422,7 +425,10 @@ class PlaywrightBrowserGateway:
                     # Captcha / need_manual already set status + alert
                     pass
                 else:
-                    msg = f"Найдено {found}, в очереди подходящих: {kept}"
+                    msg = (
+                        f"Найдено {found}, в очереди подходящих: {kept} "
+                        f"(лимит поиска {vacancy_limit})"
+                    )
                     status = JobStatus.IDLE if stop_flag.stopped else JobStatus.DONE
                     if stop_flag.stopped and not aborted_blocker:
                         msg = "Поиск остановлен. " + msg
@@ -452,7 +458,8 @@ class PlaywrightBrowserGateway:
             uow.jobs.set_status(profile, JobStatus.ERROR, reason)
             return
 
-        queue = uow.vacancies.next_queued(profile, limit=int(flags["apply_limit"]))
+        apply_limit = int(flags["apply_limit"])
+        queue = uow.vacancies.next_queued(profile, limit=apply_limit)
         if not queue:
             uow.jobs.set_status(profile, JobStatus.DONE, "Очередь пуста — сначала Search")
             return
@@ -463,11 +470,16 @@ class PlaywrightBrowserGateway:
         uow.jobs.set_status(
             profile,
             JobStatus.APPLYING,
-            f"Отклик: {len(queue)} в очереди (HIGH→MEDIUM→LOW)"
+            f"Отклик: все найденные в очереди — {len(queue)} "
+            f"(лимит {apply_limit}, HIGH→MEDIUM→LOW)"
             + (" [DRY-RUN]" if dry_run else ""),
             stats=uow.stats(profile),
         )
-        uow.journal.log(profile, "apply_start", f"queue={len(queue)} dry_run={dry_run}")
+        uow.journal.log(
+            profile,
+            "apply_start",
+            f"queue={len(queue)} apply_limit={apply_limit} dry_run={dry_run}",
+        )
         applied = 0
         processed = 0
 
@@ -663,7 +675,7 @@ class PlaywrightBrowserGateway:
             "locale": "ru-RU",
             "viewport": {"width": 1280, "height": 900},
         }
-        browser = launch_chromium(p, headless=s.headless)
+        browser = launch_chromium(p, headless=s.effective_headless())
         if sp.exists():
             context = browser.new_context(storage_state=str(sp), **kwargs)
         else:
@@ -866,32 +878,37 @@ def safe_run(
     uow: UnitOfWork,
     profile: str,
     alerts: AlertService | None = None,
+    *,
+    service: str = "hh",
 ) -> None:
     """Run job target; on crash keep DB progress and mark job_aborted."""
     try:
         fn()
     except Exception as e:
         tb = traceback.format_exc()[-2000:]
+        short = user_facing_browser_error(e)
         uow.journal.log(
             profile,
             "job_aborted",
-            str(e),
+            short,
             level="error",
-            payload={"tb": tb},
+            payload={"tb": tb, "raw": str(e)[:2000]},
+            service=service,
         )
         uow.journal.log(
             profile,
             "error",
-            str(e),
+            short,
             level="error",
             payload={"tb": tb},
+            service=service,
         )
         # Prior per-item commits stay; only job status becomes error
-        uow.jobs.set_status(profile, JobStatus.ERROR, str(e))
+        uow.jobs.set_status(profile, JobStatus.ERROR, short)
         notifier = alerts or get_alert_service()
         notifier.notify_error(
             profile,
-            str(e),
+            short,
             event="job_aborted",
-            details={"tb": tb[-500:]},
+            details={"note": "См. journal / логи сервера для traceback"},
         )

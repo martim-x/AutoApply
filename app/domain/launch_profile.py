@@ -30,6 +30,7 @@ HH_LAUNCH_DEFAULTS: dict[str, Any] = {
     "require_remote_or_hybrid": True,
     "skip_gov": True,
     "require_python_keywords": True,
+    "vacancy_limit": 30,
     "apply_limit": 30,
     "dry_run": False,
     "salary_min_usd": 2200,
@@ -47,6 +48,7 @@ HH_LAUNCH_DEFAULTS: dict[str, Any] = {
 # remote_or_hybrid: true
 # skip_gov: true
 # python_keywords: true
+# vacancy_limit: 30
 # apply_limit: 30
 # dry_run: false
 # salary_min_usd: 2200
@@ -63,6 +65,7 @@ STRICT_TEXT_KEYS = {
     "remote_or_hybrid",
     "skip_gov",
     "python_keywords",
+    "vacancy_limit",
     "apply_limit",
     "dry_run",
     "salary_min_usd",
@@ -92,6 +95,9 @@ class LaunchProfile(BaseModel):
     require_remote_or_hybrid: bool = True
     skip_gov: bool = True
     require_python_keywords: bool = True
+    # Max vacancies to find/parse in one search run (shown in UI as «до N»).
+    vacancy_limit: int = Field(default=30, ge=1, le=200)
+    # Max queued vacancies to apply in one apply run (all categories HIGH→LOW).
     apply_limit: int = Field(default=30, ge=1, le=200)
     dry_run: bool = False
     # Legend: $2200–2800 Middle+
@@ -303,6 +309,8 @@ def parse_strict_text(text: str) -> dict[str, Any]:
             else True
         ),
     }
+    if "vacancy_limit" in raw:
+        payload["vacancy_limit"] = int(raw["vacancy_limit"])
     if "apply_limit" in raw:
         payload["apply_limit"] = int(raw["apply_limit"])
     if "dry_run" in raw:
@@ -338,6 +346,7 @@ def launch_to_strict_text(profile: LaunchProfile) -> str:
         f"remote_or_hybrid: {str(profile.require_remote_or_hybrid).lower()}",
         f"skip_gov: {str(profile.skip_gov).lower()}",
         f"python_keywords: {str(profile.require_python_keywords).lower()}",
+        f"vacancy_limit: {profile.vacancy_limit}",
         f"apply_limit: {profile.apply_limit}",
         f"dry_run: {str(profile.dry_run).lower()}",
         f"salary_min_usd: {profile.salary_min_usd if profile.salary_min_usd is not None else ''}",
@@ -398,6 +407,17 @@ def load_launch_profile_with_notes(
 
     merged, merge_notes = deep_merge_defaults(raw, HH_LAUNCH_DEFAULTS, prefix="launch")
     notes.extend(merge_notes)
+    # Legacy: apply_limit used to cap search; mirror it when vacancy_limit absent.
+    if (
+        isinstance(raw, dict)
+        and "vacancy_limit" not in raw
+        and "apply_limit" in raw
+        and "apply_limit" in merged
+    ):
+        merged["vacancy_limit"] = int(merged["apply_limit"])
+        notes.append(
+            "launch.vacancy_limit ← apply_limit (legacy; set vacancy_limit explicitly)"
+        )
     try:
         return validate_launch_dict(merged), notes
     except Exception as e:
