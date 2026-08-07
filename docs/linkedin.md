@@ -51,9 +51,10 @@ LinkedIn агрессивно ограничивает автоматизаци�
 | Слой | Файлы |
 |------|--------|
 | Domain | `app/domain/linkedin_profile.py`, entities `LinkedInContact` / `LinkedInVacancyLink` |
-| Browser | `linkedin_gateway.py`, `linkedin_selectors.py` (отдельно от HH `gateway.py`) |
+| Browser | `linkedin_gateway.py`, `linkedin_selectors.py` (отдельно от HH `gateway.py`); remote/job слот `profile:linkedin` |
+| Storage | `data/sessions/<profile>.linkedin.storage.json` (не затирает HH) |
 | DB | `linkedin_contacts`, `linkedin_vacancies` |
-| API | `/api/linkedin/*` |
-| UI | workspace switcher + вкладки Контакты / Вакансии |
+| API | `/api/linkedin/*`; remote WS с `workspace=linkedin` |
+| UI | workspace switcher + вкладки Контакты / Вакансии; отдельная кнопка «Открыть браузер» |
 
 Приоритет поиска контактов по умолчанию: **Minsk → Russia → CIS**, роли **HR** и **backend**.

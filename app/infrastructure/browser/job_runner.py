@@ -1,4 +1,4 @@
-"""Background thread job runner (stoppable per profile)."""
+"""Background thread job runner (stoppable per profile×workspace)."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from app.application.alerts import AlertService, get_alert_service
 from app.domain.enums import JobStatus
 from app.domain.ports import UnitOfWork
 from app.infrastructure.browser.gateway import PlaywrightBrowserGateway, safe_run
+from app.infrastructure.browser.workspace import browser_slot_key, normalize_workspace
 from app.infrastructure.settings import Settings
 
 
@@ -45,37 +46,77 @@ class JobRunner:
         self._stops: dict[str, StopFlag] = {}
         self._services: dict[str, str] = {}
 
-    def is_busy(self, profile: str) -> bool:
-        t = self._threads.get(profile)
-        return bool(t and t.is_alive())
+    def is_busy(self, profile: str, service: str | None = None) -> bool:
+        """If service is set, only that workspace slot; otherwise any slot for profile."""
+        profile = (profile or "default").strip() or "default"
+        with self._lock:
+            if service is not None:
+                t = self._threads.get(browser_slot_key(profile, service))
+                return bool(t and t.is_alive())
+            prefix = f"{profile}:"
+            for key, t in self._threads.items():
+                if key.startswith(prefix) and t and t.is_alive():
+                    return True
+            return False
 
-    def stop(self, profile: str) -> dict[str, Any]:
-        flag = self._stops.get(profile)
-        if flag:
-            flag.stop()
-            service = self._services.get(profile, "hh")
-            self.uow.journal.log(
-                profile,
-                "stop_requested",
-                "Остановка запрошена",
-                service=service,
-            )
-            self.uow.jobs.set_status(profile, JobStatus.IDLE, "Остановка…")
-            return {"ok": True, "message": "stop requested"}
+    def stop(
+        self, profile: str, *, service: str | None = None
+    ) -> dict[str, Any]:
+        """Stop one workspace job, or all jobs for profile when service is None."""
+        profile = (profile or "default").strip() or "default"
+        stopped: list[str] = []
+        with self._lock:
+            if service is None:
+                keys = [
+                    k
+                    for k, t in self._threads.items()
+                    if k.startswith(f"{profile}:") and t and t.is_alive()
+                ]
+            else:
+                key = browser_slot_key(profile, service)
+                t = self._threads.get(key)
+                keys = [key] if t and t.is_alive() else []
+            for key in keys:
+                flag = self._stops.get(key)
+                if not flag:
+                    continue
+                flag.stop()
+                svc = self._services.get(key, normalize_workspace(key.rsplit(":", 1)[-1]))
+                stopped.append(svc)
+                self.uow.journal.log(
+                    profile,
+                    "stop_requested",
+                    "Остановка запрошена",
+                    service=svc,
+                )
+        if stopped:
+            # Shared job_state: only nudge when stopping a single known slot
+            if len(stopped) == 1:
+                self.uow.jobs.set_status(profile, JobStatus.IDLE, "Остановка…")
+            return {
+                "ok": True,
+                "message": "stop requested",
+                "workspaces": stopped,
+            }
         return {"ok": True, "message": "nothing to stop"}
 
-    def confirm_login(self, profile: str) -> dict[str, Any]:
+    def confirm_login(
+        self, profile: str, *, service: str = "hh"
+    ) -> dict[str, Any]:
+        service = normalize_workspace(service)
+        key = browser_slot_key(profile, service)
         with self._lock:
-            flag = self._stops.get(profile)
+            flag = self._stops.get(key)
             if not flag:
-                # save session path may already exist from previous login
-                sp = self.settings.state_path(profile)
+                from app.infrastructure.browser.workspace import storage_state_path
+
+                sp = storage_state_path(self.settings, profile, service)
                 if sp.exists():
-                    self.uow.profiles.save_session(profile, sp)
+                    if service != "linkedin":
+                        self.uow.profiles.save_session(profile, sp)
                     return {"ok": True, "message": "session file already on disk"}
                 return {"ok": False, "error": "login job not running"}
             flag.save_now = True
-            service = self._services.get(profile, "hh")
         self.uow.journal.log(
             profile,
             "login_confirm",
@@ -91,14 +132,19 @@ class JobRunner:
         *,
         service: str = "hh",
     ) -> dict[str, Any]:
-        service = service if service in ("hh", "linkedin") else "hh"
+        service = normalize_workspace(service)
+        key = browser_slot_key(profile, service)
         with self._lock:
-            if self.is_busy(profile):
-                return {"ok": False, "error": "job already running"}
+            existing = self._threads.get(key)
+            if existing and existing.is_alive():
+                return {
+                    "ok": False,
+                    "error": f"{service} job already running",
+                }
             self.uow.profiles.ensure_profile(profile)
             stop = StopFlag()
-            self._stops[profile] = stop
-            self._services[profile] = service
+            self._stops[key] = stop
+            self._services[key] = service
 
             def runner() -> None:
                 try:
@@ -111,13 +157,16 @@ class JobRunner:
                     )
                 finally:
                     with self._lock:
-                        self._threads.pop(profile, None)
-                        self._services.pop(profile, None)
+                        self._threads.pop(key, None)
+                        self._services.pop(key, None)
+                        self._stops.pop(key, None)
 
-            t = threading.Thread(target=runner, name=f"job-{profile}", daemon=True)
-            self._threads[profile] = t
+            t = threading.Thread(
+                target=runner, name=f"job-{profile}-{service}", daemon=True
+            )
+            self._threads[key] = t
             t.start()
-            return {"ok": True, "message": "started"}
+            return {"ok": True, "message": "started", "workspace": service}
 
     def start_login(self, profile: str) -> dict[str, Any]:
         return self._spawn(profile, self.gateway.run_login, service="hh")

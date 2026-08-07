@@ -71,7 +71,9 @@ PARSE_EARLY_STOP_ENABLED=true
 PARSE_OLD_STREAK_STOP=5
 ```
 
-Парсинг по расписанию (тот же процесс uvicorn): при наличии сессий запускает **HH search и LinkedIn vacancy collect** (оба, если оба есть). Дубликаты по URL/`vacancy_id` пропускаются; при сортировке по дате — early-stop после `PARSE_OLD_STREAK_STOP` подряд уже известных вакансий.
+Парсинг по расписанию (тот же процесс uvicorn): при наличии сессий запускает **HH search и LinkedIn vacancy collect параллельно** (два Chromium, если оба слота свободны). Дубликаты по URL/`vacancy_id` пропускаются; при сортировке по дате — early-stop после `PARSE_OLD_STREAK_STOP` подряд уже известных вакансий.
+
+> **RAM:** два Chromium на профиль ≈ 2× память headless Chrome. На Railway держите запас (часто 1–2 GB+), особенно если одновременно открыт remote screencast.
 
 4. **Volume** на `/app/data` — иначе SQLite cookies/PDF пропадут после редеплоя
    (для **Postgres** volume на БД не нужен — данные в отдельном Postgres-сервисе;

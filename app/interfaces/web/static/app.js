@@ -17,6 +17,7 @@
 
   let remoteEnabled = false;
   let remoteRunning = false;
+  let remoteViewerWorkspace = "hh";
   let ws = null;
   let viewport = { width: 1280, height: 900 };
   let img = new Image();
@@ -26,6 +27,8 @@
   let lastStatusCode = "idle";
   let lastStatusMessage = "";
   let lastBusy = false;
+  let lastBusyHh = false;
+  let lastBusyLi = false;
   let lastHasSession = false;
   let lastHasLiSession = false;
   let workspace = "hh";
@@ -98,11 +101,13 @@
     statusMessage.textContent = truncateMsg(text);
   }
 
-  function setBusy(busy) {
+  function setBusy(busyHh, busyLi) {
+    const hhOn = busyHh == null ? false : !!busyHh;
+    const liOn = busyLi == null ? false : !!busyLi;
     const hhBusyIds = ["btnLogin", "btnSearch", "btnApply", "btnLaunchCriteria"];
     hhBusyIds.forEach((id) => {
       const el = $(id);
-      if (el) el.disabled = !!busy;
+      if (el) el.disabled = hhOn;
     });
     const liBusyIds = [
       "btnLiLogin",
@@ -112,7 +117,7 @@
     ];
     liBusyIds.forEach((id) => {
       const el = $(id);
-      if (el) el.disabled = !!busy;
+      if (el) el.disabled = liOn;
     });
     // Stop must stay clickable while a job (or remote browser) is running.
     ["btnStop", "btnLiStop", "btnConfirm", "btnLiConfirm"].forEach((id) => {
@@ -122,6 +127,8 @@
     // Remote browser stays usable while connected (open/show viewer).
     const remoteBtn = $("btnRemoteBrowser");
     if (remoteBtn) remoteBtn.disabled = false;
+    const liRemoteBtn = $("btnLiRemoteBrowser");
+    if (liRemoteBtn) liRemoteBtn.disabled = false;
   }
 
   function syncLoginLabel() {
@@ -131,7 +138,7 @@
     loginLabel.textContent = t("login.connect");
   }
 
-  function syncActionLabels(status, message, busy) {
+  function syncActionLabels(status, message, busyHh, busyLi) {
     const code = status || "idle";
     const msg = String(message || "").toLowerCase();
     const searching = code === "searching";
@@ -140,6 +147,8 @@
     const liNetwork = searching && msg.includes("network");
     const liVacancies =
       searching && (msg.includes("vacanc") || msg.includes("job"));
+    const effHh = !!busyHh;
+    const effLi = !!busyLi;
 
     const { searchN, applyN } = limitVars();
     const btnSearch = $("btnSearch");
@@ -170,13 +179,24 @@
     const btnRemote = $("btnRemoteBrowser");
     if (btnRemote) {
       const open =
-        remoteRunning ||
-        (remoteModal && !remoteModal.hidden) ||
-        (ws && ws.readyState === WebSocket.OPEN);
+        workspace === "hh" &&
+        (remoteRunning ||
+          (remoteModal && !remoteModal.hidden) ||
+          (ws && ws.readyState === WebSocket.OPEN));
       setBtnLabel(btnRemote, open ? "remote.show" : "remote.open");
-      // Highlight only while the remote viewer is actually open.
       btnRemote.classList.toggle("is-primary", !!open);
       btnRemote.classList.remove("primary");
+    }
+    const btnLiRemote = $("btnLiRemoteBrowser");
+    if (btnLiRemote) {
+      const open =
+        workspace === "linkedin" &&
+        (remoteRunning ||
+          (remoteModal && !remoteModal.hidden) ||
+          (ws && ws.readyState === WebSocket.OPEN));
+      setBtnLabel(btnLiRemote, open ? "remote.show" : "remote.open");
+      btnLiRemote.classList.toggle("is-primary", !!open);
+      btnLiRemote.classList.remove("primary");
     }
 
     const btnConfirm = $("btnConfirm");
@@ -217,15 +237,26 @@
     });
 
     syncLoginLabel();
-    setBusy(!!busy);
+    setBusy(effHh, effLi);
+  }
+
+  function syncActionLabelsCached() {
+    syncActionLabels(
+      lastStatusCode,
+      lastStatusMessage,
+      lastBusyHh,
+      lastBusyLi
+    );
   }
 
   function applyRemoteUiFlag(enabled) {
     remoteEnabled = !!enabled;
-    const btn = $("btnRemoteBrowser");
-    if (btn) btn.hidden = !remoteEnabled;
+    ["btnRemoteBrowser", "btnLiRemoteBrowser"].forEach((id) => {
+      const btn = $(id);
+      if (btn) btn.hidden = !remoteEnabled;
+    });
     syncLoginLabel();
-    syncActionLabels(lastStatusCode, lastStatusMessage, lastBusy);
+    syncActionLabelsCached();
   }
 
   function sessionLooksInvalid(status, message) {
@@ -506,7 +537,7 @@
     if ($("liWorkspacePane")) $("liWorkspacePane").hidden = !isLi;
     if (logFullscreenId) setLogFullscreen(logFullscreenId, false);
     applyLiTab(liTab);
-    syncActionLabels(lastStatusCode, lastStatusMessage, lastBusy);
+    syncActionLabelsCached();
   }
 
   function applyLiTab(tab) {
@@ -516,6 +547,9 @@
     });
     if ($("liNetworkPanel")) $("liNetworkPanel").hidden = liTab !== "network";
     if ($("liVacPanel")) $("liVacPanel").hidden = liTab !== "vacancies";
+    if (logFullscreenId === "liVacPanel" && liTab !== "vacancies") {
+      setLogFullscreen("liVacPanel", false);
+    }
   }
 
   function initWorkspace() {
@@ -543,6 +577,8 @@
     lastStatusCode = status;
     lastStatusMessage = st.message || "";
     lastBusy = !!st.busy;
+    lastBusyHh = !!(st.busy_hh ?? st.busy);
+    lastBusyLi = !!(st.busy_linkedin ?? st.busy);
     lastHasSession = !!st.has_session;
     lastHasLiSession = !!st.has_linkedin_session;
     statusPill.dataset.status = status;
@@ -577,17 +613,31 @@
     showLastAlert(st.last_alert);
     updateSessionBanner(st);
 
-    if (st.remote_browser) {
-      remoteRunning = !!st.remote_browser.running;
-      if (typeof st.remote_browser.enabled === "boolean") {
-        remoteEnabled = !!st.remote_browser.enabled;
-        const btn = $("btnRemoteBrowser");
-        if (btn) btn.hidden = !remoteEnabled;
+    const remotes = st.remote_browsers || {};
+    const remoteForWs =
+      (workspace === "linkedin" ? remotes.linkedin : remotes.hh) ||
+      st.remote_browser;
+    if (remoteForWs) {
+      remoteRunning = !!remoteForWs.running;
+      const enabledFlag =
+        typeof remotes.enabled === "boolean"
+          ? remotes.enabled
+          : typeof remoteForWs.enabled === "boolean"
+            ? remoteForWs.enabled
+            : typeof (st.remote_browser && st.remote_browser.enabled) === "boolean"
+              ? st.remote_browser.enabled
+              : null;
+      if (enabledFlag !== null) {
+        remoteEnabled = !!enabledFlag;
+        ["btnRemoteBrowser", "btnLiRemoteBrowser"].forEach((id) => {
+          const btn = $(id);
+          if (btn) btn.hidden = !remoteEnabled;
+        });
       }
     } else {
       remoteRunning = false;
     }
-    syncActionLabels(status, st.message, st.busy);
+    syncActionLabels(status, st.message, lastBusyHh, lastBusyLi);
   }
 
   function explainButtonHtml(vacancyId) {
@@ -806,15 +856,22 @@
   }
 
   async function requestStop() {
-    // Always hit /api/stop (job + remote on server). Then clear stale viewer UI
-    // so a leftover modal/WS cannot swallow the next Stop click.
-    await withAction(() => post("/api/stop"));
-    closeRemoteModalUi();
+    // Stop only the current workspace so the other can keep running in parallel.
+    await withAction(() =>
+      post("/api/stop", { profile: profile(), workspace })
+    );
+    if (remoteViewerWorkspace === workspace) {
+      closeRemoteModalUi();
+    }
   }
 
-  function wsUrl() {
+  function wsUrl(wsName) {
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    return `${proto}://${location.host}/api/remote-browser/ws?profile=${encodeURIComponent(profile())}`;
+    const wsVal = encodeURIComponent(wsName || workspace || "hh");
+    return (
+      `${proto}://${location.host}/api/remote-browser/ws` +
+      `?profile=${encodeURIComponent(profile())}&workspace=${wsVal}`
+    );
   }
 
   function syncRemoteCanvasSize() {
@@ -939,7 +996,7 @@
     remoteUrl.textContent = "";
     remoteFsDesired = false;
     syncRemoteFullscreenUi();
-    syncActionLabels(lastStatusCode, lastStatusMessage, lastBusy);
+    syncActionLabelsCached();
     remoteCanvas.focus();
   }
 
@@ -955,15 +1012,16 @@
       try { ws.close(); } catch (_) {}
       ws = null;
     }
-    syncActionLabels(lastStatusCode, lastStatusMessage, lastBusy);
+    syncActionLabelsCached();
   }
 
   async function startRemoteViewer(wsName) {
+    remoteViewerWorkspace = wsName === "linkedin" ? "linkedin" : "hh";
     openRemoteModal();
     try {
       const started = await post("/api/remote-browser/start", {
         profile: profile(),
-        workspace: wsName || workspace || "hh",
+        workspace: remoteViewerWorkspace,
       });
       if (started && started.error) {
         setRemoteOverlay(truncateMsg(started.error, 200), false);
@@ -984,7 +1042,7 @@
       try { ws.close(); } catch (_) {}
     }
 
-    ws = new WebSocket(wsUrl());
+    ws = new WebSocket(wsUrl(remoteViewerWorkspace));
     ws.onopen = () => {
       setRemoteOverlay("remote.waiting_frames", true);
       remoteCanvas.focus();
@@ -1034,7 +1092,11 @@
 
   async function closeRemoteViewer(save) {
     try {
-      await post("/api/remote-browser/stop", { profile: profile(), save: !!save });
+      await post("/api/remote-browser/stop", {
+        profile: profile(),
+        save: !!save,
+        workspace: remoteViewerWorkspace || workspace || "hh",
+      });
     } catch (_) {}
     closeRemoteModalUi();
     await refreshAll();
@@ -1112,6 +1174,18 @@
     await startRemoteViewer("hh");
   };
 
+  if ($("btnLiRemoteBrowser")) {
+    $("btnLiRemoteBrowser").onclick = async () => {
+      await withAction(() =>
+        post("/api/remote-browser/start", {
+          profile: profile(),
+          workspace: "linkedin",
+        })
+      );
+      await startRemoteViewer("linkedin");
+    };
+  }
+
   if ($("btnLiLogin")) {
     $("btnLiLogin").onclick = async () => {
       if (remoteEnabled) {
@@ -1126,8 +1200,14 @@
     $("btnLiConfirm").onclick = () =>
       withAction(() =>
         remoteEnabled && !remoteModal.hidden
-          ? post("/api/remote-browser/save")
-          : post("/api/login/confirm")
+          ? post("/api/remote-browser/save", {
+              profile: profile(),
+              workspace: "linkedin",
+            })
+          : post("/api/login/confirm", {
+              profile: profile(),
+              workspace: "linkedin",
+            })
       );
   }
   if ($("btnLiNetwork")) {
@@ -1188,8 +1268,14 @@
   $("btnConfirm").onclick = () =>
     withAction(() =>
       remoteEnabled && !remoteModal.hidden
-        ? post("/api/remote-browser/save")
-        : post("/api/login/confirm")
+        ? post("/api/remote-browser/save", {
+            profile: profile(),
+            workspace: "hh",
+          })
+        : post("/api/login/confirm", {
+            profile: profile(),
+            workspace: "hh",
+          })
     );
   $("btnRemoteSave").onclick = () => withAction(() => post("/api/remote-browser/save"));
   $("btnRemoteClose").onclick = () => closeRemoteViewer(true);
@@ -1230,7 +1316,7 @@
     if (!launch) {
       $("launchMeta").textContent = t("launch.meta.empty");
       syncLimitsHint();
-      syncActionLabels(lastStatusCode, lastStatusMessage, lastBusy);
+      syncActionLabelsCached();
       return;
     }
     const loc = launch.location || {};
@@ -1246,7 +1332,7 @@
       `${launch.site || "?"} · ${city} · ${sal} · queries=${q} · ` +
       `search≤${vLim} · apply≤${aLim}`;
     syncLimitsHint();
-    syncActionLabels(lastStatusCode, lastStatusMessage, lastBusy);
+    syncActionLabelsCached();
   }
 
   async function refreshLaunch() {
@@ -1379,7 +1465,7 @@
   };
 
   window.addEventListener("aa:lang", () => {
-    syncActionLabels(lastStatusCode, lastStatusMessage, lastBusy);
+    syncActionLabelsCached();
     statusLabel.textContent = statusDisplay(lastStatusCode);
     $("stSession").textContent = lastHasSession
       ? t("stats.session_ok")
@@ -1508,11 +1594,11 @@
       setLogFullscreen(logFullscreenId, false);
     });
     window.addEventListener("aa:lang", () => {
-      if (logFullscreenId) {
-        syncLogExpandBtn($(logFullscreenId), true);
-      } else {
-        document.querySelectorAll(".panel-log").forEach((p) => syncLogExpandBtn(p, false));
-      }
+      document.querySelectorAll("[data-log-expand]").forEach((btn) => {
+        const id = btn.getAttribute("data-log-expand");
+        if (!id) return;
+        syncLogExpandBtn($(id), logFullscreenId === id);
+      });
     });
   }
 

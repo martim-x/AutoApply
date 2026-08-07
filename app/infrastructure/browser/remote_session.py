@@ -14,6 +14,11 @@ from typing import Any
 from app.domain.enums import JobStatus
 from app.domain.ports import UnitOfWork
 from app.infrastructure.browser.launch import launch_chromium, user_facing_browser_error
+from app.infrastructure.browser.workspace import (
+    browser_slot_key,
+    normalize_workspace,
+    storage_state_path,
+)
 from app.infrastructure.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -27,10 +32,11 @@ class SessionInfo:
     running: bool
     url: str = ""
     error: str = ""
+    workspace: str = "hh"
 
 
 class RemoteBrowserSession:
-    """One Playwright Chromium + CDP screencast for a profile (own thread)."""
+    """One Playwright Chromium + CDP screencast for a profile×workspace (own thread)."""
 
     def __init__(
         self,
@@ -45,7 +51,7 @@ class RemoteBrowserSession:
         self.profile = profile
         self.uow = uow
         self.settings = settings
-        self.workspace = workspace if workspace in ("hh", "linkedin") else "hh"
+        self.workspace = normalize_workspace(workspace)
         self.state_path_override = Path(state_path) if state_path else None
         if start_url:
             self.start_url = start_url
@@ -67,7 +73,7 @@ class RemoteBrowserSession:
         self._url = ""
         self._thread = threading.Thread(
             target=self._run,
-            name=f"remote-browser-{profile}",
+            name=f"remote-browser-{profile}-{self.workspace}",
             daemon=True,
         )
         self._cdp: Any = None
@@ -79,9 +85,7 @@ class RemoteBrowserSession:
     def resolved_state_path(self) -> Path:
         if self.state_path_override is not None:
             return Path(self.state_path_override)
-        if self.workspace == "linkedin":
-            return self.settings.linkedin_state_path(self.profile)
-        return self.settings.state_path(self.profile)
+        return storage_state_path(self.settings, self.profile, self.workspace)
 
     def start(self) -> None:
         self._thread.start()
@@ -129,6 +133,7 @@ class RemoteBrowserSession:
             running=self.alive,
             url=self._url,
             error=self._error or "",
+            workspace=self.workspace,
         )
 
     def _run(self) -> None:
@@ -373,7 +378,7 @@ class RemoteBrowserSession:
 
 
 class RemoteBrowserManager:
-    """Process-wide registry of remote browser sessions (one per profile)."""
+    """Process-wide registry: up to one remote Chromium per profile×workspace."""
 
     def __init__(self, uow: UnitOfWork, settings: Settings) -> None:
         self.uow = uow
@@ -384,13 +389,32 @@ class RemoteBrowserManager:
     def enabled(self) -> bool:
         return bool(self.settings.enable_remote_browser)
 
-    def get(self, profile: str) -> RemoteBrowserSession | None:
+    def get(
+        self, profile: str, workspace: str = "hh"
+    ) -> RemoteBrowserSession | None:
+        key = browser_slot_key(profile, workspace)
         with self._lock:
-            sess = self._sessions.get(profile)
+            sess = self._sessions.get(key)
             if sess and not sess.alive:
-                self._sessions.pop(profile, None)
+                self._sessions.pop(key, None)
                 return None
             return sess
+
+    def any_running(self, profile: str) -> bool:
+        profile = (profile or "default").strip() or "default"
+        with self._lock:
+            dead: list[str] = []
+            found = False
+            for key, sess in self._sessions.items():
+                if not key.startswith(f"{profile}:"):
+                    continue
+                if sess.alive:
+                    found = True
+                else:
+                    dead.append(key)
+            for key in dead:
+                self._sessions.pop(key, None)
+            return found
 
     def start(
         self,
@@ -406,16 +430,22 @@ class RemoteBrowserManager:
                 "error": "remote browser disabled (set ENABLE_REMOTE_BROWSER=true)",
             }
         profile = (profile or "default").strip() or "default"
-        workspace = workspace if workspace in ("hh", "linkedin") else "hh"
+        workspace = normalize_workspace(workspace)
+        key = browser_slot_key(profile, workspace)
         with self._lock:
-            existing = self._sessions.get(profile)
+            existing = self._sessions.get(key)
             if existing and existing.alive:
                 return {
                     "ok": True,
                     "message": "already running",
                     "profile": profile,
+                    "workspace": workspace,
                     "viewport": VIEWPORT,
                     "url": existing.url,
+                    "ws_path": (
+                        f"/api/remote-browser/ws?profile={profile}"
+                        f"&workspace={workspace}"
+                    ),
                 }
             self.uow.profiles.ensure_profile(profile)
             sess = RemoteBrowserSession(
@@ -426,13 +456,17 @@ class RemoteBrowserManager:
                 state_path=state_path,
                 workspace=workspace,
             )
-            self._sessions[profile] = sess
+            self._sessions[key] = sess
             sess.start()
 
         if not sess.wait_ready(timeout=60.0):
             sess.stop()
+            with self._lock:
+                self._sessions.pop(key, None)
             return {"ok": False, "error": "browser start timeout"}
         if sess.error:
+            with self._lock:
+                self._sessions.pop(key, None)
             return {"ok": False, "error": sess.error}
         return {
             "ok": True,
@@ -440,43 +474,71 @@ class RemoteBrowserManager:
             "profile": profile,
             "viewport": VIEWPORT,
             "url": sess.url,
-            "ws_path": f"/api/remote-browser/ws?profile={profile}",
+            "ws_path": (
+                f"/api/remote-browser/ws?profile={profile}&workspace={workspace}"
+            ),
             "workspace": workspace,
         }
 
-    def save(self, profile: str) -> dict[str, Any]:
-        sess = self.get(profile)
+    def save(self, profile: str, *, workspace: str = "hh") -> dict[str, Any]:
+        workspace = normalize_workspace(workspace)
+        sess = self.get(profile, workspace)
         if not sess:
-            # Prefer path from last known workspace files on disk
-            for sp in (
-                self.settings.state_path(profile),
-                self.settings.linkedin_state_path(profile),
-            ):
-                if sp.exists():
+            sp = storage_state_path(self.settings, profile, workspace)
+            if sp.exists():
+                if workspace != "linkedin":
                     self.uow.profiles.save_session(profile, sp)
-                    return {"ok": True, "message": "session file already on disk"}
+                return {"ok": True, "message": "session file already on disk"}
             return {"ok": False, "error": "remote browser not running"}
         sess.request_save()
-        # give thread a moment
         time.sleep(0.3)
-        return {"ok": True, "message": "save requested"}
+        return {"ok": True, "message": "save requested", "workspace": workspace}
 
-    def stop(self, profile: str, *, save: bool = True) -> dict[str, Any]:
+    def stop(
+        self,
+        profile: str,
+        *,
+        save: bool = True,
+        workspace: str | None = None,
+    ) -> dict[str, Any]:
+        """Stop one workspace session, or all for profile when workspace is None."""
+        profile = (profile or "default").strip() or "default"
+        stopped: list[str] = []
         with self._lock:
-            sess = self._sessions.pop(profile, None)
-        if not sess:
+            if workspace is None:
+                keys = [
+                    k
+                    for k in list(self._sessions)
+                    if k.startswith(f"{profile}:")
+                ]
+            else:
+                keys = [browser_slot_key(profile, workspace)]
+            sessions = []
+            for key in keys:
+                sess = self._sessions.pop(key, None)
+                if sess:
+                    sessions.append(sess)
+        for sess in sessions:
+            sess.stop(save=save)
+            sess.join(timeout=20.0)
+            stopped.append(sess.workspace)
+        if not stopped:
             return {"ok": True, "message": "nothing to stop"}
-        sess.stop(save=save)
-        sess.join(timeout=20.0)
-        return {"ok": True, "message": "stopped"}
+        return {
+            "ok": True,
+            "message": "stopped",
+            "workspaces": stopped,
+        }
 
-    def status(self, profile: str) -> dict[str, Any]:
-        sess = self.get(profile)
+    def status(self, profile: str, *, workspace: str = "hh") -> dict[str, Any]:
+        workspace = normalize_workspace(workspace)
+        sess = self.get(profile, workspace)
         if not sess:
             return {
                 "enabled": self.enabled(),
                 "running": False,
                 "profile": profile,
+                "workspace": workspace,
                 "viewport": VIEWPORT,
             }
         info = sess.info()
@@ -484,7 +546,15 @@ class RemoteBrowserManager:
             "enabled": self.enabled(),
             "running": info.running,
             "profile": info.profile,
+            "workspace": info.workspace,
             "url": info.url,
             "error": info.error,
             "viewport": VIEWPORT,
+        }
+
+    def status_all(self, profile: str) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled(),
+            "hh": self.status(profile, workspace="hh"),
+            "linkedin": self.status(profile, workspace="linkedin"),
         }

@@ -210,6 +210,10 @@
               <svg class="ico" aria-hidden="true"><use href="#i-key"/></svg>
               <span class="btn-label" data-i18n="linkedin.login">Войти в аккаунт</span>
             </button>
+            <button type="button" id="btnLiRemoteBrowser" class="touch" hidden>
+              <svg class="ico" aria-hidden="true"><use href="#i-globe"/></svg>
+              <span class="btn-label" data-label-remote-li data-i18n="remote.open">Открыть браузер</span>
+            </button>
             <button type="button" id="btnLiConfirm" class="ghost touch"
               data-i18n="session.save.title" data-i18n-attr="title,aria-label">
               <svg class="ico" aria-hidden="true"><use href="#i-shield"/></svg>
@@ -310,9 +314,14 @@
     </section>
 
     <section class="panels" id="hhPanels" data-workspace-panel="hh">
-      <div class="panel panel-resizable" data-panel-size="hh-vac">
+      <div class="panel panel-resizable" id="hhVacPanel" data-panel-size="hh-vac">
         <div class="panel-head">
           <h2 data-i18n="queue.title">Вакансии</h2>
+          <button type="button" class="ghost touch icon-only log-expand-btn" data-log-expand="hhVacPanel"
+            data-i18n="log.expand" data-i18n-attr="title,aria-label"
+            title="Развернуть на весь экран" aria-label="Развернуть на весь экран">
+            <svg class="ico" aria-hidden="true"><use href="#i-expand"/></svg>
+          </button>
         </div>
         <div class="table-wrap desktop-only">
           <table>
@@ -366,6 +375,11 @@
       <div class="panel panel-resizable" id="liVacPanel" data-panel-size="li-vac" hidden>
         <div class="panel-head">
           <h2 data-i18n="linkedin.vacancies.title">Вакансии LinkedIn</h2>
+          <button type="button" class="ghost touch icon-only log-expand-btn" data-log-expand="liVacPanel"
+            data-i18n="log.expand" data-i18n-attr="title,aria-label"
+            title="Развернуть на весь экран" aria-label="Развернуть на весь экран">
+            <svg class="ico" aria-hidden="true"><use href="#i-expand"/></svg>
+          </button>
         </div>
         <p class="empty-state" id="liVacEmpty" data-i18n="empty.yet">Пока пусто</p>
         <div class="table-wrap" id="liVacTable" hidden>

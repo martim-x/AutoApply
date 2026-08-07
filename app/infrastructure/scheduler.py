@@ -289,13 +289,19 @@ class ParseScheduler:
                 except TimeoutError:
                     pass
 
-    async def _wait_idle(self, profile: str, *, timeout: float = 3600.0) -> bool:
-        """Wait until JobRunner is free for profile. Returns False on stop/timeout."""
+    async def _wait_idle(
+        self,
+        profile: str,
+        *,
+        service: str | None = None,
+        timeout: float = 3600.0,
+    ) -> bool:
+        """Wait until JobRunner slot is free. Returns False on stop/timeout."""
         deadline = time.time() + timeout
         while time.time() < deadline:
             if self._stop.is_set():
                 return False
-            if not self.runner.is_busy(profile):
+            if not self.runner.is_busy(profile, service):
                 return True
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=2.0)
@@ -331,38 +337,48 @@ class ParseScheduler:
             self.uow.journal.log(profile, "parse_scheduled_skip", msg, level="warning")
             return {"ok": False, "error": msg, "started": [], "skipped": ["hh", "linkedin"]}
 
+        # Wait until both workspace slots are free (HH job must not block LI start).
         if not await self._wait_idle(profile, timeout=600.0):
             msg = "profile busy — deferred parse aborted"
             self.uow.journal.log(profile, "parse_scheduled_busy", msg, level="warning")
             return {"ok": False, "error": msg, "started": started, "skipped": skipped}
 
+        wait_services: list[str] = []
+
         if has_hh:
-            res = self.runner.start_search(profile)
-            if res.get("ok"):
-                started.append("hh")
-                await self._wait_idle(profile)
-            else:
-                errors.append(f"hh:{res.get('error')}")
+            if self.runner.is_busy(profile, "hh"):
+                errors.append("hh:busy")
                 skipped.append("hh")
+            else:
+                res = self.runner.start_search(profile)
+                if res.get("ok"):
+                    started.append("hh")
+                    wait_services.append("hh")
+                else:
+                    errors.append(f"hh:{res.get('error')}")
+                    skipped.append("hh")
         else:
             skipped.append("hh")
 
-        if self._stop.is_set():
-            return {"ok": False, "started": started, "skipped": skipped, "errors": errors}
-
         if has_li:
-            if not await self._wait_idle(profile, timeout=600.0):
+            if self.runner.is_busy(profile, "linkedin"):
                 errors.append("linkedin:busy")
+                skipped.append("linkedin")
             else:
                 res = self.runner.start_linkedin_vacancies(profile)
                 if res.get("ok"):
                     started.append("linkedin")
-                    await self._wait_idle(profile)
+                    wait_services.append("linkedin")
                 else:
                     errors.append(f"linkedin:{res.get('error')}")
                     skipped.append("linkedin")
         else:
             skipped.append("linkedin")
+
+        for svc in wait_services:
+            if self._stop.is_set():
+                break
+            await self._wait_idle(profile, service=svc)
 
         self.uow.journal.log(
             profile,

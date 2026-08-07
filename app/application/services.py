@@ -10,6 +10,7 @@ from app.domain.enums import JobStatus
 from app.domain.ports import UnitOfWork
 from app.infrastructure.browser.job_runner import JobRunner
 from app.infrastructure.browser.remote_session import RemoteBrowserManager
+from app.infrastructure.browser.workspace import normalize_workspace
 from app.infrastructure.settings import Settings
 
 
@@ -39,16 +40,21 @@ class AppService:
         profile = self._profile(profile)
         # When remote browser is enabled, prefer interactive screencast over local window
         if self.settings.enable_remote_browser:
-            if self.runner.is_busy(profile):
-                return {"ok": False, "error": "job already running"}
+            if self.runner.is_busy(profile, "hh"):
+                return {"ok": False, "error": "hh job already running"}
             return self.remote_browser.start(profile, workspace="hh")
         return self.runner.start_login(profile)
 
-    def confirm_login(self, profile: str = "default") -> dict[str, Any]:
+    def confirm_login(
+        self, profile: str = "default", *, workspace: str = "hh"
+    ) -> dict[str, Any]:
         profile = self._profile(profile)
-        if self.settings.enable_remote_browser and self.remote_browser.get(profile):
-            return self.remote_browser.save(profile)
-        return self.runner.confirm_login(profile)
+        ws = normalize_workspace(workspace)
+        if self.settings.enable_remote_browser and self.remote_browser.get(
+            profile, ws
+        ):
+            return self.remote_browser.save(profile, workspace=ws)
+        return self.runner.confirm_login(profile, service=ws)
 
     # ── Remote browser (CDP screencast) ────────────────────────
 
@@ -56,47 +62,80 @@ class AppService:
         self, profile: str = "default", *, workspace: str = "hh"
     ) -> dict[str, Any]:
         profile = self._profile(profile)
-        if self.runner.is_busy(profile) and not self.remote_browser.get(profile):
-            return {"ok": False, "error": "job already running"}
-        ws = workspace if workspace in ("hh", "linkedin") else "hh"
+        ws = normalize_workspace(workspace)
+        if self.runner.is_busy(profile, ws) and not self.remote_browser.get(
+            profile, ws
+        ):
+            return {"ok": False, "error": f"{ws} job already running"}
         return self.remote_browser.start(profile, workspace=ws)
 
-    def save_remote_browser(self, profile: str = "default") -> dict[str, Any]:
-        return self.remote_browser.save(self._profile(profile))
+    def save_remote_browser(
+        self, profile: str = "default", *, workspace: str = "hh"
+    ) -> dict[str, Any]:
+        return self.remote_browser.save(
+            self._profile(profile), workspace=normalize_workspace(workspace)
+        )
 
     def stop_remote_browser(
-        self, profile: str = "default", *, save: bool = True
+        self,
+        profile: str = "default",
+        *,
+        save: bool = True,
+        workspace: str | None = None,
     ) -> dict[str, Any]:
-        return self.remote_browser.stop(self._profile(profile), save=save)
+        ws = normalize_workspace(workspace) if workspace is not None else None
+        return self.remote_browser.stop(
+            self._profile(profile), save=save, workspace=ws
+        )
 
-    def remote_browser_status(self, profile: str = "default") -> dict[str, Any]:
-        return self.remote_browser.status(self._profile(profile))
+    def remote_browser_status(
+        self, profile: str = "default", *, workspace: str = "hh"
+    ) -> dict[str, Any]:
+        return self.remote_browser.status(
+            self._profile(profile), workspace=normalize_workspace(workspace)
+        )
 
     # ── StartSearch ───────────────────────────────────────────
 
     def start_search(self, profile: str = "default") -> dict[str, Any]:
         profile = self._profile(profile)
-        if self.remote_browser.get(profile):
-            return {"ok": False, "error": "remote browser open — закройте или Stop"}
+        if self.remote_browser.get(profile, "hh"):
+            return {
+                "ok": False,
+                "error": "hh remote browser open — закройте или Stop",
+            }
         return self.runner.start_search(profile)
 
     # ── StartApply ────────────────────────────────────────────
 
     def start_apply(self, profile: str = "default") -> dict[str, Any]:
         profile = self._profile(profile)
-        if self.remote_browser.get(profile):
-            return {"ok": False, "error": "remote browser open — закройте или Stop"}
+        if self.remote_browser.get(profile, "hh"):
+            return {
+                "ok": False,
+                "error": "hh remote browser open — закройте или Stop",
+            }
         return self.runner.start_apply(profile)
 
     # ── StopJob ───────────────────────────────────────────────
 
-    def stop_job(self, profile: str = "default") -> dict[str, Any]:
-        """Stop running job and/or remote browser (both if present)."""
+    def stop_job(
+        self, profile: str = "default", *, workspace: str | None = None
+    ) -> dict[str, Any]:
+        """Stop job and/or remote for one workspace, or all when workspace is None."""
         profile = self._profile(profile)
+        ws = normalize_workspace(workspace) if workspace is not None else None
         out: dict[str, Any] = {"ok": True}
-        if self.remote_browser.get(profile):
-            out["remote"] = self.remote_browser.stop(profile, save=True)
-        job = self.runner.stop(profile)
+        if ws is not None:
+            if self.remote_browser.get(profile, ws):
+                out["remote"] = self.remote_browser.stop(
+                    profile, save=True, workspace=ws
+                )
+        elif self.remote_browser.any_running(profile):
+            out["remote"] = self.remote_browser.stop(
+                profile, save=True, workspace=None
+            )
+        job = self.runner.stop(profile, service=ws)
         remote_msg = (out.get("remote") or {}).get("message") or ""
         job_msg = job.get("message") or ""
         parts = [
@@ -203,7 +242,12 @@ class AppService:
             "message": st.message,
             "stats": {**st.stats, **stats},
             "updated_at": st.updated_at,
-            "busy": self.runner.is_busy(profile) or bool(self.remote_browser.get(profile)),
+            "busy": self.runner.is_busy(profile)
+            or self.remote_browser.any_running(profile),
+            "busy_hh": self.runner.is_busy(profile, "hh")
+            or bool(self.remote_browser.get(profile, "hh")),
+            "busy_linkedin": self.runner.is_busy(profile, "linkedin")
+            or bool(self.remote_browser.get(profile, "linkedin")),
             "has_session": has_hh,
             "has_linkedin_session": has_li,
             "linkedin_stats": {
@@ -211,7 +255,8 @@ class AppService:
                 "vacancies": self.uow.linkedin_vacancies.stats(profile),
             },
             "statuses": [s.value for s in JobStatus],
-            "remote_browser": self.remote_browser.status(profile),
+            "remote_browser": self.remote_browser.status(profile, workspace="hh"),
+            "remote_browsers": self.remote_browser.status_all(profile),
             "notifications": notifications,
             "last_alert": last_alert,
             "report_schedule": self.scheduler.status() if self.scheduler else None,
@@ -346,7 +391,7 @@ class AppService:
         new = (new_name or "").strip()
         if not old or not new:
             return {"ok": False, "error": "empty profile name"}
-        if self.runner.is_busy(old) or self.remote_browser.get(old):
+        if self.runner.is_busy(old) or self.remote_browser.any_running(old):
             return {"ok": False, "error": "profile busy — stop job / close browser first"}
         try:
             p = self.uow.profiles.rename_profile(old, new)
@@ -363,7 +408,7 @@ class AppService:
         profile = (name or "").strip()
         if not profile:
             return {"ok": False, "error": "empty profile name"}
-        if self.runner.is_busy(profile) or self.remote_browser.get(profile):
+        if self.runner.is_busy(profile) or self.remote_browser.any_running(profile):
             return {"ok": False, "error": "profile busy — stop job / close browser first"}
         try:
             selected = self.uow.profiles.delete_profile(profile)
@@ -548,21 +593,27 @@ class AppService:
     def start_linkedin_login(self, profile: str = "default") -> dict[str, Any]:
         profile = self._profile(profile)
         if self.settings.enable_remote_browser:
-            if self.runner.is_busy(profile):
-                return {"ok": False, "error": "job already running"}
+            if self.runner.is_busy(profile, "linkedin"):
+                return {"ok": False, "error": "linkedin job already running"}
             return self.remote_browser.start(profile, workspace="linkedin")
         return self.runner.start_linkedin_login(profile)
 
     def start_linkedin_network(self, profile: str = "default") -> dict[str, Any]:
         profile = self._profile(profile)
-        if self.remote_browser.get(profile):
-            return {"ok": False, "error": "remote browser open — закройте или Stop"}
+        if self.remote_browser.get(profile, "linkedin"):
+            return {
+                "ok": False,
+                "error": "linkedin remote browser open — закройте или Stop",
+            }
         return self.runner.start_linkedin_network(profile)
 
     def start_linkedin_vacancies(self, profile: str = "default") -> dict[str, Any]:
         profile = self._profile(profile)
-        if self.remote_browser.get(profile):
-            return {"ok": False, "error": "remote browser open — закройте или Stop"}
+        if self.remote_browser.get(profile, "linkedin"):
+            return {
+                "ok": False,
+                "error": "linkedin remote browser open — закройте или Stop",
+            }
         return self.runner.start_linkedin_vacancies(profile)
 
     def get_linkedin_launch(self) -> dict[str, Any]:

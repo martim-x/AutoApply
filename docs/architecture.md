@@ -98,7 +98,9 @@ SERP → мягкий pre-filter (gov)
 
 **Латентность:** обычно 0.2–2 с — ок для логина, не для скоростного серфинга.
 
-**Код:** `app/infrastructure/browser/remote_session.py`, WS `/api/remote-browser/ws`.
+**Код:** `app/infrastructure/browser/remote_session.py`, WS `/api/remote-browser/ws?profile=&workspace=`.
+
+На один профиль допускается **два** независимых Chromium: `hh` и `linkedin` (разные `storage_state`). JobRunner тоже слотирует по `profile:workspace`, поэтому search/apply и LinkedIn grow/collect могут идти параллельно. UI-viewer один (modal), но сессии в фоне не шарятся.
 
 ---
 

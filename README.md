@@ -119,7 +119,7 @@ docker compose up --build
 | POST | `/api/remote-browser/save` | Сохранить `storage_state` |
 | POST | `/api/remote-browser/stop` | Стоп remote |
 | GET | `/api/remote-browser/status` | Статус remote |
-| WS | `/api/remote-browser/ws?profile=` | Кадры + ввод |
+| WS | `/api/remote-browser/ws?profile=&workspace=` | Кадры + ввод (`hh` \| `linkedin`) |
 | POST | `/api/search` | Поиск |
 | POST | `/api/apply` | Отклики |
 | POST | `/api/stop` | Stop job |

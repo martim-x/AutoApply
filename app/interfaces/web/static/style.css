@@ -779,7 +779,7 @@ button:focus-visible {
 .log-expand-btn:hover {
   color: var(--accent);
 }
-.panel-log.is-log-fullscreen {
+.panel.is-log-fullscreen {
   position: fixed;
   inset: 0;
   z-index: 60;
@@ -797,7 +797,9 @@ button:focus-visible {
   background: var(--panel);
   box-shadow: none;
 }
-.panel-log.is-log-fullscreen .log {
+.panel.is-log-fullscreen .log,
+.panel.is-log-fullscreen .table-wrap,
+.panel.is-log-fullscreen .vac-cards {
   flex: 1 1 auto;
   min-height: 0;
 }
