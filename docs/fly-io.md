@@ -47,10 +47,10 @@ fly secrets set \
   ALERT_SMTP_ENABLED=true \
   ALERT_SMTP_HOST=smtp.yandex.ru \
   ALERT_SMTP_PORT=465 \
-  ALERT_SMTP_USER='you@yandex.ru' \
+  ALERT_SMTP_USER='you@example.com' \
   ALERT_SMTP_PASSWORD='app_password' \
-  ALERT_SMTP_FROM='you@yandex.ru' \
-  ALERT_SMTP_TO='you@yandex.ru' \
+  ALERT_SMTP_FROM='you@example.com' \
+  ALERT_SMTP_TO='you@example.com' \
   ALERT_SMTP_TLS=true \
   --app autoapply
 

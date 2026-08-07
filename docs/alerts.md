@@ -17,7 +17,7 @@ ALERT_SMTP_PORT=587
 ALERT_SMTP_USER=bot@example.com
 ALERT_SMTP_PASSWORD=...
 ALERT_SMTP_FROM=bot@example.com
-ALERT_SMTP_TO=marutimof@yandex.by
+ALERT_SMTP_TO=you@example.com
 ALERT_SMTP_TLS=true
 ALERT_ON_ERROR=true
 ALERT_ON_CAPTCHA=true
@@ -37,16 +37,16 @@ ALERT_RATE_LIMIT_SECONDS=600
 
 ### Yandex Mail (пример)
 
-В `.env.example` уже указан пример `ALERT_SMTP_TO=marutimof@yandex.by`. Остальное задаёте сами:
+В `.env.example` уже указан пример `ALERT_SMTP_TO=you@example.com`. Остальное задаёте сами:
 
 ```env
 ALERT_SMTP_ENABLED=true
 ALERT_SMTP_HOST=smtp.yandex.ru
 ALERT_SMTP_PORT=465
-ALERT_SMTP_USER=you@yandex.by
+ALERT_SMTP_USER=you@example.com
 ALERT_SMTP_PASSWORD=app-password
-ALERT_SMTP_FROM=you@yandex.by
-ALERT_SMTP_TO=marutimof@yandex.by
+ALERT_SMTP_FROM=you@example.com
+ALERT_SMTP_TO=you@example.com
 ALERT_SMTP_TLS=true
 ```
 
