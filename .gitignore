@@ -1,4 +1,7 @@
 .env
+.env.local
+fly.secrets.env
+*.secrets.env
 .venv/
 venv/
 __pycache__/
