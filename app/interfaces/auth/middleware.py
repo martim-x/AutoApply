@@ -65,11 +65,9 @@ class GateAuthMiddleware:
             await self.app(scope, receive, send)
             return
 
-        settings = getattr(
-            scope.get("app").state if scope.get("app") else None,
-            "settings",
-            None,
-        ) or self.settings
+        asgi_app = scope.get("app")
+        state = getattr(asgi_app, "state", None) if asgi_app is not None else None
+        settings = getattr(state, "settings", None) or self.settings
 
         if not settings.gate_enabled():
             await self.app(scope, receive, send)
