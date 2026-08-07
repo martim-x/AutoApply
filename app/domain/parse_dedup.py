@@ -1,4 +1,4 @@
-"""Duplicate detection + early-stop streak for vacancy SERP walks (newest→older)."""
+"""Duplicate detection + SERP early-stop helpers (newest→older, page-aware)."""
 
 from __future__ import annotations
 
@@ -17,11 +17,40 @@ def next_old_streak(streak: int, is_old: bool) -> int:
 
 
 def should_stop_old_streak(streak: int, threshold: int) -> bool:
-    """True when streak of old vacancies reached configured N."""
+    """True when streak of old vacancies reached configured N (0 = disabled)."""
     n = int(threshold)
     if n <= 0:
         return False
     return int(streak) >= n
+
+
+def next_dup_page_streak(streak: int, page_all_duplicates: bool) -> int:
+    """
+    Track consecutive SERP pages that contain only already-known vacancies.
+    A page with any new listing resets the streak.
+    """
+    if page_all_duplicates:
+        return max(0, int(streak)) + 1
+    return 0
+
+
+def should_stop_dup_pages(streak: int, threshold: int) -> bool:
+    """True when consecutive fully-duplicate pages reached N (0 = disabled)."""
+    return should_stop_old_streak(streak, threshold)
+
+
+def serp_page_all_duplicates(dup_flags: list[bool]) -> bool:
+    """True when the page has listings and every one is already known."""
+    return bool(dup_flags) and all(dup_flags)
+
+
+def serp_page_boundary_duplicates(dup_flags: list[bool]) -> bool:
+    """
+    True when first and last listing on the page are both known.
+    Used as a soft signal that the window is in an already-seen region
+    (still process the page for any new items in the middle).
+    """
+    return len(dup_flags) >= 2 and bool(dup_flags[0]) and bool(dup_flags[-1])
 
 
 def hh_vacancy_id(url: str) -> str | None:

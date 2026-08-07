@@ -121,9 +121,15 @@ class Settings(BaseSettings):
     # Comma-separated HH:MM (or bare hours): "12:00,00:00"
     parse_schedule_times: str = "12:00,00:00"
     parse_schedule_profile: str = "default"
-    # Early-stop when SERP is newest-first: N consecutive known vacancies
+    # SERP walk (newest-first): paginate past known listings instead of
+    # aborting on a short item streak. Early-stop = consecutive fully-duplicate pages.
     parse_early_stop_enabled: bool = True
-    parse_old_streak_stop: int = 5
+    # Optional item-level streak (0 = off). Prefer PARSE_DUP_PAGE_STOP.
+    parse_old_streak_stop: int = 0
+    # Max SERP pages per query (HH page=0..N-1; LinkedIn start+=25).
+    parse_max_serp_pages: int = 20
+    # Stop current query after N consecutive pages with only known vacancies.
+    parse_dup_page_stop: int = 3
 
     # SMTP alerts (sync smtplib; short timeouts — one Railway process)
     alert_smtp_enabled: bool = False
@@ -300,20 +306,51 @@ class Settings(BaseSettings):
             "notifications": notes,
         }
 
+    def serp_walk_knobs(self) -> dict[str, Any]:
+        """
+        Shared HH + LinkedIn SERP pagination / early-stop knobs.
+        Soft-defaults invalid values; 0 disables the matching stop.
+        """
+        notes: list[str] = []
+        early = bool(self.parse_early_stop_enabled)
+        streak = int(self.parse_old_streak_stop)
+        if streak < 0:
+            notes.append(
+                f"using PARSE_OLD_STREAK_STOP=0 because invalid ({streak})"
+            )
+            streak = 0
+        max_pages = int(self.parse_max_serp_pages)
+        if max_pages < 1:
+            notes.append(
+                f"using default PARSE_MAX_SERP_PAGES=20 because invalid ({max_pages})"
+            )
+            max_pages = 20
+        dup_pages = int(self.parse_dup_page_stop)
+        if dup_pages < 0:
+            notes.append(
+                f"using default PARSE_DUP_PAGE_STOP=3 because invalid ({dup_pages})"
+            )
+            dup_pages = 3
+        return {
+            "early_stop_enabled": early,
+            # Item streak optional; off unless explicitly > 0
+            "old_streak_stop": streak if early else 0,
+            "max_serp_pages": max_pages,
+            # Page-based stop; off when early-stop master switch is false
+            "dup_page_stop": dup_pages if early else 0,
+            "notifications": notes,
+        }
+
     def parse_parse_schedule(self) -> dict[str, Any]:
         """
-        Resolve vacancy-parse schedule (multi-fire times + early-stop knobs).
+        Resolve vacancy-parse schedule (multi-fire times + SERP walk knobs).
         Soft-defaults missing/invalid PARSE_SCHEDULE_TIMES → 12:00,00:00.
         """
         notes: list[str] = []
         times, time_notes = parse_schedule_times_list(self.parse_schedule_times)
         notes.extend(time_notes)
-        streak = int(self.parse_old_streak_stop)
-        if streak < 1:
-            notes.append(
-                f"using default PARSE_OLD_STREAK_STOP=5 because invalid ({streak})"
-            )
-            streak = 5
+        walk = self.serp_walk_knobs()
+        notes.extend(walk.get("notifications") or [])
         tz = (self.parse_schedule_timezone or "").strip() or "Europe/Minsk"
         if not (self.parse_schedule_timezone or "").strip():
             notes.append(
@@ -326,8 +363,10 @@ class Settings(BaseSettings):
             "times": times,
             "times_display": ",".join(f"{h:02d}:{m:02d}" for h, m in times),
             "profile": profile,
-            "early_stop_enabled": bool(self.parse_early_stop_enabled),
-            "old_streak_stop": streak,
+            "early_stop_enabled": walk["early_stop_enabled"],
+            "old_streak_stop": walk["old_streak_stop"],
+            "max_serp_pages": walk["max_serp_pages"],
+            "dup_page_stop": walk["dup_page_stop"],
             # Prefer both HH + LinkedIn when sessions exist (documented choice)
             "workspaces": ["hh", "linkedin"],
             "notifications": notes,

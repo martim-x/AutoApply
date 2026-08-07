@@ -68,10 +68,12 @@ PARSE_SCHEDULE_TIMEZONE=Europe/Minsk
 PARSE_SCHEDULE_TIMES=12:00,00:00
 PARSE_SCHEDULE_PROFILE=default
 PARSE_EARLY_STOP_ENABLED=true
-PARSE_OLD_STREAK_STOP=5
+PARSE_OLD_STREAK_STOP=0
+PARSE_MAX_SERP_PAGES=20
+PARSE_DUP_PAGE_STOP=3
 ```
 
-Парсинг по расписанию (тот же процесс uvicorn): при наличии сессий запускает **HH search и LinkedIn vacancy collect параллельно** (два Chromium, если оба слота свободны). Дубликаты по URL/`vacancy_id` пропускаются; при сортировке по дате — early-stop после `PARSE_OLD_STREAK_STOP` подряд уже известных вакансий.
+Парсинг по расписанию (тот же процесс uvicorn): при наличии сессий запускает **HH search и LinkedIn vacancy collect параллельно** (два Chromium, если оба слота свободны). Дубликаты по URL/`vacancy_id` пропускаются; при сортировке по дате полностью дублирующие страницы SERP пропускаются, early-stop — после `PARSE_DUP_PAGE_STOP` таких страниц подряд (лимит `PARSE_MAX_SERP_PAGES`).
 
 > **RAM:** два Chromium на профиль ≈ 2× память headless Chrome. На Railway держите запас (часто 1–2 GB+), особенно если одновременно открыт remote screencast.
 

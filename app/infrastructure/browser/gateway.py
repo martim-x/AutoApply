@@ -17,8 +17,10 @@ from app.domain.filters import evaluate_vacancy
 from app.domain.launch_profile import LaunchProfile, load_launch_profile
 from app.domain.parse_dedup import (
     is_duplicate_vacancy,
+    next_dup_page_streak,
     next_old_streak,
     remember_vacancy,
+    should_stop_dup_pages,
     should_stop_old_streak,
 )
 from app.domain.ports import UnitOfWork
@@ -165,8 +167,11 @@ class PlaywrightBrowserGateway:
         found = 0
         kept = 0
         processed = 0
-        early_stop = bool(s.parse_early_stop_enabled)
-        streak_stop = int(s.parse_old_streak_stop) if early_stop else 0
+        walk = s.serp_walk_knobs()
+        early_stop = bool(walk["early_stop_enabled"])
+        streak_stop = int(walk["old_streak_stop"])
+        max_pages = int(walk["max_serp_pages"])
+        dup_page_stop = int(walk["dup_page_stop"])
         known_urls, known_ids = uow.vacancies.known_keys(profile)
 
         with sync_playwright() as p:
@@ -178,7 +183,6 @@ class PlaywrightBrowserGateway:
                 for qi, query in enumerate(queries):
                     if stop_flag.stopped or aborted_blocker:
                         break
-                    serp = self._serp_url(query, launch)
                     uow.journal.log(profile, "serp", f"[{qi+1}/{len(queries)}] {query!r}")
                     checkpoint = {
                         **uow.stats(profile),
@@ -195,93 +199,200 @@ class PlaywrightBrowserGateway:
                         stats=checkpoint,
                     )
                     try:
-                        if not self._goto(page, serp, limiter, expect=SEL["vacancy_link"]):
-                            uow.journal.log(profile, "serp_fail", query, level="warn")
-                            self.alerts.notify(
-                                "serp_fail",
-                                f"SERP failed: {query}",
-                                profile=profile,
-                                details={"query": query},
-                            )
-                            continue
-
-                        blocker = self._detect_blockers(page)
-                        if blocker:
-                            self._pause_for_blocker(
-                                profile, blocker, context=f"search query={query!r}"
-                            )
-                            if hasattr(stop_flag, "stop"):
-                                stop_flag.stop()
-                            aborted_blocker = True
-                            break
-
-                        old_streak = 0
-                        for item in self._collect_links(
-                            page, limit=max(vacancy_limit * 2, 50)
-                        ):
-                            if stop_flag.stopped or kept >= vacancy_limit:
+                        dup_page_streak = 0
+                        query_stop = False
+                        for page_idx in range(max_pages):
+                            if (
+                                stop_flag.stopped
+                                or kept >= vacancy_limit
+                                or aborted_blocker
+                                or query_stop
+                            ):
                                 break
-                            path = urlparse(item["url"]).path
-                            if path in seen:
-                                continue
-                            seen.add(path)
-                            found += 1
-                            url, title = item["url"], item["title"] or item["url"]
-                            vid = vacancy_id_from_url(url)
+                            serp = self._serp_url(query, launch, page=page_idx)
+                            if not self._goto(
+                                page, serp, limiter, expect=SEL["vacancy_link"]
+                            ):
+                                uow.journal.log(
+                                    profile,
+                                    "serp_fail",
+                                    f"{query} page={page_idx}",
+                                    level="warn",
+                                )
+                                self.alerts.notify(
+                                    "serp_fail",
+                                    f"SERP failed: {query}",
+                                    profile=profile,
+                                    details={"query": query, "page": page_idx},
+                                )
+                                break
 
-                            try:
-                                if is_duplicate_vacancy(
+                            blocker = self._detect_blockers(page)
+                            if blocker:
+                                self._pause_for_blocker(
+                                    profile,
+                                    blocker,
+                                    context=f"search query={query!r} page={page_idx}",
+                                )
+                                if hasattr(stop_flag, "stop"):
+                                    stop_flag.stop()
+                                aborted_blocker = True
+                                break
+
+                            items = self._collect_links(page, limit=50)
+                            if not items:
+                                break
+
+                            page_rows: list[tuple[dict[str, str], str | None, bool]] = []
+                            for item in items:
+                                path = urlparse(item["url"]).path
+                                if path in seen:
+                                    continue
+                                seen.add(path)
+                                found += 1
+                                url = item["url"]
+                                vid = vacancy_id_from_url(url)
+                                is_dup = is_duplicate_vacancy(
                                     url=url,
                                     vacancy_id=vid,
                                     known_urls=known_urls,
                                     known_ids=known_ids,
-                                ):
-                                    old_streak = next_old_streak(old_streak, True)
-                                    uow.journal.log(
-                                        profile,
-                                        "filtered:duplicate",
-                                        title[:80],
-                                        payload={"url": url, "vacancy_id": vid},
-                                    )
-                                    if early_stop and should_stop_old_streak(
-                                        old_streak, streak_stop
-                                    ):
+                                )
+                                page_rows.append((item, vid, is_dup))
+
+                            if not page_rows:
+                                break
+
+                            new_on_page = 0
+                            old_streak = 0
+                            for item, vid, is_dup in page_rows:
+                                if stop_flag.stopped or kept >= vacancy_limit:
+                                    break
+                                url = item["url"]
+                                title = item["title"] or item["url"]
+                                try:
+                                    if is_dup:
+                                        old_streak = next_old_streak(old_streak, True)
                                         uow.journal.log(
                                             profile,
-                                            "early_stop:old_streak",
-                                            f"streak={old_streak} query={query!r}",
+                                            "filtered:duplicate",
+                                            title[:80],
                                             payload={
-                                                "streak": old_streak,
-                                                "threshold": streak_stop,
-                                                "query": query,
+                                                "url": url,
+                                                "vacancy_id": vid,
+                                                "page": page_idx,
                                             },
                                         )
+                                        if should_stop_old_streak(
+                                            old_streak, streak_stop
+                                        ):
+                                            uow.journal.log(
+                                                profile,
+                                                "early_stop:old_streak",
+                                                f"streak={old_streak} query={query!r}",
+                                                payload={
+                                                    "streak": old_streak,
+                                                    "threshold": streak_stop,
+                                                    "query": query,
+                                                    "page": page_idx,
+                                                },
+                                            )
+                                            query_stop = True
+                                            break
+                                        continue
+
+                                    old_streak = next_old_streak(old_streak, False)
+                                    new_on_page += 1
+
+                                    pre = evaluate_vacancy(
+                                        url,
+                                        title,
+                                        "",
+                                        require_remote_or_hybrid=False,
+                                        skip_gov=bool(flags["skip_gov"]),
+                                        require_python_keywords=False,
+                                        location=None,
+                                    )
+                                    if not pre.ok:
+                                        uow.vacancies.upsert(
+                                            Vacancy(
+                                                profile=profile,
+                                                url=url,
+                                                vacancy_id=vid,
+                                                title=title,
+                                                query=query,
+                                                serp_url=serp,
+                                                category=FitCategory.LOW,
+                                                filter_status=pre.status,
+                                                apply_status=ApplyStatus.SKIPPED,
+                                            )
+                                        )
+                                        remember_vacancy(
+                                            url=url,
+                                            vacancy_id=vid,
+                                            known_urls=known_urls,
+                                            known_ids=known_ids,
+                                        )
+                                        processed += 1
+                                        continue
+
+                                    loaded = self._goto(
+                                        page, url, limiter, expect=SEL["response_btn"]
+                                    )
+                                    page_text = self._page_text(page) if loaded else ""
+                                    card_blocker = self._detect_blockers(page)
+                                    if card_blocker:
+                                        self._pause_for_blocker(
+                                            profile,
+                                            card_blocker,
+                                            context=f"vacancy {title[:60]}",
+                                        )
+                                        if hasattr(stop_flag, "stop"):
+                                            stop_flag.stop()
+                                        aborted_blocker = True
                                         break
-                                    continue
 
-                                old_streak = next_old_streak(old_streak, False)
-
-                                pre = evaluate_vacancy(
-                                    url,
-                                    title,
-                                    "",
-                                    require_remote_or_hybrid=False,
-                                    skip_gov=bool(flags["skip_gov"]),
-                                    require_python_keywords=False,
-                                    location=None,
-                                )
-                                if not pre.ok:
+                                    decision = evaluate_vacancy(
+                                        url,
+                                        title,
+                                        page_text,
+                                        require_remote_or_hybrid=bool(
+                                            flags["require_remote_or_hybrid"]
+                                        ),
+                                        skip_gov=bool(flags["skip_gov"]),
+                                        require_python_keywords=bool(
+                                            flags["require_python_keywords"]
+                                        ),
+                                        location=flags["location"],
+                                        launch=flags.get("launch"),
+                                    )
+                                    cat = categorize_vacancy(
+                                        title,
+                                        page_text,
+                                        url=url,
+                                        location=flags["location"],
+                                        launch=flags.get("launch"),
+                                    )
+                                    ok = decision.ok
                                     uow.vacancies.upsert(
                                         Vacancy(
                                             profile=profile,
                                             url=url,
                                             vacancy_id=vid,
                                             title=title,
+                                            description=page_text[:5000],
                                             query=query,
                                             serp_url=serp,
-                                            category=FitCategory.LOW,
-                                            filter_status=pre.status,
-                                            apply_status=ApplyStatus.SKIPPED,
+                                            category=cat.category,
+                                            score=cat.score,
+                                            category_reason=cat.explanation
+                                            or cat.reason,
+                                            filter_status="ok"
+                                            if ok
+                                            else decision.status,
+                                            apply_status=ApplyStatus.QUEUED
+                                            if ok
+                                            else ApplyStatus.SKIPPED,
                                         )
                                     )
                                     remember_vacancy(
@@ -291,103 +402,80 @@ class PlaywrightBrowserGateway:
                                         known_ids=known_ids,
                                     )
                                     processed += 1
-                                    continue
+                                    if ok:
+                                        kept += 1
+                                        uow.journal.log(
+                                            profile,
+                                            "queued",
+                                            f"[{cat.category.value}/{cat.score}] "
+                                            f"{title[:70]}",
+                                        )
+                                    else:
+                                        uow.journal.log(
+                                            profile, decision.status, title[:80]
+                                        )
 
-                                loaded = self._goto(
-                                    page, url, limiter, expect=SEL["response_btn"]
-                                )
-                                page_text = self._page_text(page) if loaded else ""
-                                card_blocker = self._detect_blockers(page)
-                                if card_blocker:
-                                    self._pause_for_blocker(
-                                        profile,
-                                        card_blocker,
-                                        context=f"vacancy {title[:60]}",
-                                    )
-                                    if hasattr(stop_flag, "stop"):
-                                        stop_flag.stop()
-                                    aborted_blocker = True
-                                    break
-
-                                decision = evaluate_vacancy(
-                                    url,
-                                    title,
-                                    page_text,
-                                    require_remote_or_hybrid=bool(
-                                        flags["require_remote_or_hybrid"]
-                                    ),
-                                    skip_gov=bool(flags["skip_gov"]),
-                                    require_python_keywords=bool(
-                                        flags["require_python_keywords"]
-                                    ),
-                                    location=flags["location"],
-                                    launch=flags.get("launch"),
-                                )
-                                cat = categorize_vacancy(
-                                    title,
-                                    page_text,
-                                    url=url,
-                                    location=flags["location"],
-                                    launch=flags.get("launch"),
-                                )
-                                ok = decision.ok
-                                # Commit per vacancy (UoW commits each write)
-                                uow.vacancies.upsert(
-                                    Vacancy(
-                                        profile=profile,
-                                        url=url,
-                                        vacancy_id=vid,
-                                        title=title,
-                                        description=page_text[:5000],
-                                        query=query,
-                                        serp_url=serp,
-                                        category=cat.category,
-                                        score=cat.score,
-                                        category_reason=cat.explanation or cat.reason,
-                                        filter_status="ok" if ok else decision.status,
-                                        apply_status=ApplyStatus.QUEUED
-                                        if ok
-                                        else ApplyStatus.SKIPPED,
-                                    )
-                                )
-                                remember_vacancy(
-                                    url=url,
-                                    vacancy_id=vid,
-                                    known_urls=known_urls,
-                                    known_ids=known_ids,
-                                )
-                                processed += 1
-                                if ok:
-                                    kept += 1
+                                    try:
+                                        self._goto(
+                                            page,
+                                            serp,
+                                            limiter,
+                                            expect=SEL["vacancy_link"],
+                                        )
+                                    except Exception:
+                                        pass
+                                except Exception as unit_exc:
                                     uow.journal.log(
                                         profile,
-                                        "queued",
-                                        f"[{cat.category.value}/{cat.score}] {title[:70]}",
+                                        "unit_failed",
+                                        f"{title[:60]}: {unit_exc}",
+                                        level="warn",
+                                        payload={"url": url, "query": query},
                                     )
-                                else:
-                                    uow.journal.log(profile, decision.status, title[:80])
+                                    self.alerts.notify(
+                                        "unit_failed",
+                                        str(unit_exc)[:200],
+                                        profile=profile,
+                                        details={"url": url, "query": query},
+                                    )
+                                    continue
 
-                                try:
-                                    self._goto(
-                                        page, serp, limiter, expect=SEL["vacancy_link"]
-                                    )
-                                except Exception:
-                                    pass
-                            except Exception as unit_exc:
+                            if aborted_blocker or query_stop:
+                                break
+
+                            page_all_dup = new_on_page == 0
+                            dup_page_streak = next_dup_page_streak(
+                                dup_page_streak, page_all_dup
+                            )
+                            if page_all_dup:
                                 uow.journal.log(
                                     profile,
-                                    "unit_failed",
-                                    f"{title[:60]}: {unit_exc}",
-                                    level="warn",
-                                    payload={"url": url, "query": query},
+                                    "serp_skip_dup_page",
+                                    f"page={page_idx} query={query!r} "
+                                    f"dup_pages={dup_page_streak}",
+                                    payload={
+                                        "page": page_idx,
+                                        "query": query,
+                                        "dup_page_streak": dup_page_streak,
+                                        "listings": len(page_rows),
+                                    },
                                 )
-                                self.alerts.notify(
-                                    "unit_failed",
-                                    str(unit_exc)[:200],
-                                    profile=profile,
-                                    details={"url": url, "query": query},
-                                )
-                                continue
+                                if should_stop_dup_pages(
+                                    dup_page_streak, dup_page_stop
+                                ):
+                                    uow.journal.log(
+                                        profile,
+                                        "early_stop:dup_pages",
+                                        f"dup_pages={dup_page_streak} "
+                                        f"query={query!r}",
+                                        payload={
+                                            "dup_page_streak": dup_page_streak,
+                                            "threshold": dup_page_stop,
+                                            "query": query,
+                                            "page": page_idx,
+                                        },
+                                    )
+                                    break
 
                         if kept >= vacancy_limit or aborted_blocker:
                             break
@@ -684,15 +772,22 @@ class PlaywrightBrowserGateway:
         context.set_default_timeout(s.content_timeout_ms)
         return browser, context, sp
 
-    def _serp_url(self, query: str, launch: LaunchProfile | None = None) -> str:
+    def _serp_url(
+        self,
+        query: str,
+        launch: LaunchProfile | None = None,
+        *,
+        page: int = 0,
+    ) -> str:
         base = self._site_base(launch)
         area = self._search_area(launch)
         url = f"{base}/search/vacancy?text={quote_plus(query)}&items_on_page=50"
         if area:
             url += f"&area={area}"
-        # Newest-first so PARSE_EARLY_STOP / old-streak is safe to use
-        if self.settings.parse_early_stop_enabled:
-            url += "&order_by=publication_time"
+        # Newest-first so page walk past known listings is meaningful
+        url += "&order_by=publication_time"
+        if page > 0:
+            url += f"&page={int(page)}"
         return url
 
     def _under_quota(self, profile: str) -> tuple[bool, str]:

@@ -1,12 +1,16 @@
-"""Unit tests for vacancy duplicate detection + old-streak early-stop."""
+"""Unit tests for vacancy duplicate detection + SERP page early-stop."""
 
 from __future__ import annotations
 
 from app.domain.parse_dedup import (
     canonical_vacancy_url,
     is_duplicate_vacancy,
+    next_dup_page_streak,
     next_old_streak,
     remember_vacancy,
+    serp_page_all_duplicates,
+    serp_page_boundary_duplicates,
+    should_stop_dup_pages,
     should_stop_old_streak,
 )
 from app.infrastructure.settings import Settings, parse_schedule_times_list
@@ -57,6 +61,28 @@ def test_mixed_sequence_resets_and_stops() -> None:
 def test_threshold_zero_never_stops() -> None:
     assert not should_stop_old_streak(100, 0)
     assert not should_stop_old_streak(100, -1)
+    assert not should_stop_dup_pages(100, 0)
+
+
+def test_dup_page_streak_and_stop() -> None:
+    streak = 0
+    streak = next_dup_page_streak(streak, True)
+    streak = next_dup_page_streak(streak, True)
+    assert streak == 2
+    assert not should_stop_dup_pages(streak, 3)
+    streak = next_dup_page_streak(streak, True)
+    assert should_stop_dup_pages(streak, 3)
+    # New page with fresh listings resets
+    assert next_dup_page_streak(streak, False) == 0
+
+
+def test_serp_page_all_and_boundary_duplicates() -> None:
+    assert serp_page_all_duplicates([True, True, True])
+    assert not serp_page_all_duplicates([True, False, True])
+    assert not serp_page_all_duplicates([])
+    assert serp_page_boundary_duplicates([True, False, True])
+    assert not serp_page_boundary_duplicates([True, True, False])
+    assert not serp_page_boundary_duplicates([True])
 
 
 def test_is_duplicate_by_url_and_id() -> None:
@@ -128,5 +154,29 @@ def test_parse_parse_schedule_soft_defaults() -> None:
     s = Settings(_env_file=None, parse_schedule_times="nope")
     sched = s.parse_parse_schedule()
     assert sched["times"] == [(0, 0), (12, 0)]
-    assert sched["old_streak_stop"] == 5
+    assert sched["old_streak_stop"] == 0
+    assert sched["max_serp_pages"] == 20
+    assert sched["dup_page_stop"] == 3
     assert sched["notifications"]
+
+
+def test_serp_walk_knobs_defaults() -> None:
+    s = Settings(_env_file=None)
+    walk = s.serp_walk_knobs()
+    assert walk["early_stop_enabled"] is True
+    assert walk["old_streak_stop"] == 0
+    assert walk["max_serp_pages"] == 20
+    assert walk["dup_page_stop"] == 3
+
+
+def test_serp_walk_knobs_disabled_early_stop() -> None:
+    s = Settings(
+        _env_file=None,
+        parse_early_stop_enabled=False,
+        parse_old_streak_stop=5,
+        parse_dup_page_stop=3,
+    )
+    walk = s.serp_walk_knobs()
+    assert walk["old_streak_stop"] == 0
+    assert walk["dup_page_stop"] == 0
+    assert walk["max_serp_pages"] == 20

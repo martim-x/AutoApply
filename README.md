@@ -307,8 +307,10 @@ PDF: `data/reports/`. Вручную: `GET /api/reports/{kind}.pdf`, `POST /api/
 | `PARSE_SCHEDULE_TIMEZONE` | нет | `Europe/Minsk` | Часовой пояс |
 | `PARSE_SCHEDULE_TIMES` | нет | `12:00,00:00` | Список `HH:MM` |
 | `PARSE_SCHEDULE_PROFILE` | нет | `default` | Профиль |
-| `PARSE_EARLY_STOP_ENABLED` | нет | `true` | Early-stop по streak уже известных вакансий |
-| `PARSE_OLD_STREAK_STOP` | нет | `5` | Длина streak для остановки query |
+| `PARSE_EARLY_STOP_ENABLED` | нет | `true` | Early-stop по подряд идущим страницам-дубликатам (HH + LinkedIn) |
+| `PARSE_OLD_STREAK_STOP` | нет | `0` | Опциональный item-streak (0 = выкл.) |
+| `PARSE_MAX_SERP_PAGES` | нет | `20` | Макс. страниц SERP на query |
+| `PARSE_DUP_PAGE_STOP` | нет | `3` | Остановка после N полностью дублирующих страниц |
 
 При срабатывании: HH StartSearch и LinkedIn vacancy collect (если есть соответствующие сессии), предпочтительно параллельно. Дубликаты → `filtered:duplicate`.
 

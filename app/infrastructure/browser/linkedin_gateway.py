@@ -24,8 +24,10 @@ from app.domain.linkedin_profile import (
 )
 from app.domain.parse_dedup import (
     is_duplicate_vacancy,
+    next_dup_page_streak,
     next_old_streak,
     remember_vacancy,
+    should_stop_dup_pages,
     should_stop_old_streak,
 )
 from app.domain.ports import UnitOfWork
@@ -326,14 +328,19 @@ class LinkedInBrowserGateway:
             f"LinkedIn vacancies… limit={launch.vacancy_limit}",
         )
         saved = 0
-        early_stop = bool(s.parse_early_stop_enabled)
-        streak_stop = int(s.parse_old_streak_stop) if early_stop else 0
+        walk = s.serp_walk_knobs()
+        streak_stop = int(walk["old_streak_stop"])
+        max_pages = int(walk["max_serp_pages"])
+        dup_page_stop = int(walk["dup_page_stop"])
+        # LinkedIn jobs search uses start=0,25,50… (~25 cards per page)
+        li_page_size = 25
         known_urls = uow.linkedin_vacancies.known_urls(profile)
         known_ids: set[str] = {
             jid
             for u in known_urls
             if (jid := linkedin_job_id(u))
         }
+        seen_ids: set[str] = set()
 
         with sync_playwright() as p:
             browser, context, _ = self._launch(p, profile)
@@ -344,110 +351,174 @@ class LinkedInBrowserGateway:
                 for query, location in launch.vacancy_search_combos():
                     if stop_flag.stopped or saved >= launch.vacancy_limit:
                         break
-                    url = (
-                        "https://www.linkedin.com/jobs/search/"
-                        f"?keywords={quote_plus(query)}"
-                        f"&location={quote_plus(location)}"
-                    )
-                    # Date descending — required for safe old-streak early-stop
-                    if early_stop:
-                        url += "&sortBy=DD"
-                    self._log(
-                        profile, "linkedin_job_search", f"{query} @ {location}"
-                    )
-                    try:
-                        page.goto(
-                            url,
-                            wait_until="domcontentloaded",
-                            timeout=s.navigation_timeout_ms,
-                        )
-                    except Exception as e:
-                        self._log(
-                            profile, "linkedin_nav_error", str(e), level="error"
-                        )
-                        self._pause(launch.min_action_interval, launch.jitter)
-                        continue
-
-                    self._pause(launch.min_action_interval, launch.jitter)
-                    if self._blocked(page, profile):
-                        return
-
-                    cards = self._collect_job_cards(page, profile)
-                    old_streak = 0
-                    for card in cards:
-                        if stop_flag.stopped or saved >= launch.vacancy_limit:
-                            break
-                        link = card.get("url") or ""
-                        jid = linkedin_job_id(link)
-                        if not jid:
-                            continue
-                        title = card.get("title") or link
-                        if is_duplicate_vacancy(
-                            url=link,
-                            vacancy_id=jid,
-                            known_urls=known_urls,
-                            known_ids=known_ids,
+                    combo = f"{query}@{location}"
+                    self._log(profile, "linkedin_job_search", f"{query} @ {location}")
+                    dup_page_streak = 0
+                    query_stop = False
+                    for page_idx in range(max_pages):
+                        if (
+                            stop_flag.stopped
+                            or saved >= launch.vacancy_limit
+                            or query_stop
                         ):
-                            old_streak = next_old_streak(old_streak, True)
-                            self._log(
-                                profile,
-                                "filtered:duplicate",
-                                title[:80],
-                                payload={"url": link, "vacancy_id": jid, "source": "linkedin"},
-                            )
-                            if early_stop and should_stop_old_streak(
-                                old_streak, streak_stop
-                            ):
-                                self._log(
-                                    profile,
-                                    "early_stop:old_streak",
-                                    f"streak={old_streak} query={query!r}@{location}",
-                                    payload={
-                                        "streak": old_streak,
-                                        "threshold": streak_stop,
-                                        "query": f"{query}@{location}",
-                                        "source": "linkedin",
-                                    },
-                                )
-                                break
-                            continue
-
-                        old_streak = next_old_streak(old_streak, False)
+                            break
+                        url = (
+                            "https://www.linkedin.com/jobs/search/"
+                            f"?keywords={quote_plus(query)}"
+                            f"&location={quote_plus(location)}"
+                            "&sortBy=DD"
+                        )
+                        if page_idx > 0:
+                            url += f"&start={page_idx * li_page_size}"
                         try:
-                            uow.linkedin_vacancies.upsert(
-                                LinkedInVacancyLink(
-                                    profile=profile,
-                                    url=link,
-                                    title=card.get("title") or "",
-                                    company=card.get("company") or "",
-                                    location=card.get("location") or location,
-                                    query=f"{query}@{location}",
-                                    source="linkedin",
-                                )
+                            page.goto(
+                                url,
+                                wait_until="domcontentloaded",
+                                timeout=s.navigation_timeout_ms,
                             )
-                            remember_vacancy(
+                        except Exception as e:
+                            self._log(
+                                profile, "linkedin_nav_error", str(e), level="error"
+                            )
+                            self._pause(launch.min_action_interval, launch.jitter)
+                            break
+
+                        self._pause(launch.min_action_interval, launch.jitter)
+                        if self._blocked(page, profile):
+                            return
+
+                        cards = self._collect_job_cards(page, profile)
+                        if not cards:
+                            break
+
+                        page_rows: list[tuple[dict[str, str], str, bool]] = []
+                        for card in cards:
+                            link = card.get("url") or ""
+                            jid = linkedin_job_id(link)
+                            if not jid or jid in seen_ids:
+                                continue
+                            seen_ids.add(jid)
+                            is_dup = is_duplicate_vacancy(
                                 url=link,
                                 vacancy_id=jid,
                                 known_urls=known_urls,
                                 known_ids=known_ids,
                             )
-                            saved += 1
-                        except Exception as unit_exc:
+                            page_rows.append((card, jid, is_dup))
+
+                        if not page_rows:
+                            break
+
+                        new_on_page = 0
+                        old_streak = 0
+                        for card, jid, is_dup in page_rows:
+                            if stop_flag.stopped or saved >= launch.vacancy_limit:
+                                break
+                            link = card.get("url") or ""
+                            title = card.get("title") or link
+                            if is_dup:
+                                old_streak = next_old_streak(old_streak, True)
+                                self._log(
+                                    profile,
+                                    "filtered:duplicate",
+                                    title[:80],
+                                    payload={
+                                        "url": link,
+                                        "vacancy_id": jid,
+                                        "source": "linkedin",
+                                        "page": page_idx,
+                                    },
+                                )
+                                if should_stop_old_streak(old_streak, streak_stop):
+                                    self._log(
+                                        profile,
+                                        "early_stop:old_streak",
+                                        f"streak={old_streak} query={combo!r}",
+                                        payload={
+                                            "streak": old_streak,
+                                            "threshold": streak_stop,
+                                            "query": combo,
+                                            "source": "linkedin",
+                                            "page": page_idx,
+                                        },
+                                    )
+                                    query_stop = True
+                                    break
+                                continue
+
+                            old_streak = next_old_streak(old_streak, False)
+                            new_on_page += 1
+                            try:
+                                uow.linkedin_vacancies.upsert(
+                                    LinkedInVacancyLink(
+                                        profile=profile,
+                                        url=link,
+                                        title=card.get("title") or "",
+                                        company=card.get("company") or "",
+                                        location=card.get("location") or location,
+                                        query=combo,
+                                        source="linkedin",
+                                    )
+                                )
+                                remember_vacancy(
+                                    url=link,
+                                    vacancy_id=jid,
+                                    known_urls=known_urls,
+                                    known_ids=known_ids,
+                                )
+                                saved += 1
+                            except Exception as unit_exc:
+                                self._log(
+                                    profile,
+                                    "unit_failed",
+                                    f"linkedin vacancy {link}: {unit_exc}",
+                                    level="warn",
+                                )
+                                self.alerts.notify(
+                                    "unit_failed",
+                                    str(unit_exc)[:200],
+                                    profile=profile,
+                                    details={"url": link},
+                                )
+                                continue
+
+                        if query_stop:
+                            break
+
+                        page_all_dup = new_on_page == 0
+                        dup_page_streak = next_dup_page_streak(
+                            dup_page_streak, page_all_dup
+                        )
+                        if page_all_dup:
                             self._log(
                                 profile,
-                                "unit_failed",
-                                f"linkedin vacancy {link}: {unit_exc}",
-                                level="warn",
+                                "serp_skip_dup_page",
+                                f"page={page_idx} query={combo!r} "
+                                f"dup_pages={dup_page_streak}",
+                                payload={
+                                    "page": page_idx,
+                                    "query": combo,
+                                    "dup_page_streak": dup_page_streak,
+                                    "listings": len(page_rows),
+                                    "source": "linkedin",
+                                },
                             )
-                            self.alerts.notify(
-                                "unit_failed",
-                                str(unit_exc)[:200],
-                                profile=profile,
-                                details={"url": link},
-                            )
-                            continue
+                            if should_stop_dup_pages(dup_page_streak, dup_page_stop):
+                                self._log(
+                                    profile,
+                                    "early_stop:dup_pages",
+                                    f"dup_pages={dup_page_streak} query={combo!r}",
+                                    payload={
+                                        "dup_page_streak": dup_page_streak,
+                                        "threshold": dup_page_stop,
+                                        "query": combo,
+                                        "page": page_idx,
+                                        "source": "linkedin",
+                                    },
+                                )
+                                break
 
-                    self._pause(launch.min_action_interval, launch.jitter)
+                        self._pause(launch.min_action_interval, launch.jitter)
 
                 try:
                     context.storage_state(path=str(sp))

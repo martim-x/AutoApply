@@ -194,14 +194,16 @@ PARSE_SCHEDULE_TIMEZONE=Europe/Minsk
 PARSE_SCHEDULE_TIMES=12:00,00:00
 PARSE_SCHEDULE_PROFILE=default
 PARSE_EARLY_STOP_ENABLED=true
-PARSE_OLD_STREAK_STOP=5
+PARSE_OLD_STREAK_STOP=0
+PARSE_MAX_SERP_PAGES=20
+PARSE_DUP_PAGE_STOP=3
 ```
 
 Локально по умолчанию `PARSE_SCHEDULE_ENABLED=false`. На Railway — `true` после сохранения сессий.
 
 При срабатывании: **HH StartSearch** (если есть HH-сессия) и **LinkedIn vacancies** (если есть LI-сессия) — предпочтительно оба.  
 Дубликаты (URL / `vacancy_id` / canonical link уже в БД профиля) → `filtered:duplicate`, без повторной очереди.  
-SERP сортируется по дате (`order_by=publication_time` / LinkedIn `sortBy=DD`); после N подряд уже известных вакансий — `early_stop:old_streak` и остановка по текущему запросу.
+SERP сортируется по дате (`order_by=publication_time` / LinkedIn `sortBy=DD`). Если страница целиком из уже известных — переход на следующую (`serp_skip_dup_page`); после `PARSE_DUP_PAGE_STOP` таких страниц подряд — `early_stop:dup_pages`. Потолок — `PARSE_MAX_SERP_PAGES` или `vacancy_limit` новых.
 
 В UI — подсказка «парсинг по расписанию / последний парсинг» рядом с блоком отчёта.
 
