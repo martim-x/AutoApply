@@ -190,3 +190,23 @@ def test_middleware_auto_refresh_from_refresh_cookie(gate_env):
     )
     r = client.get("/api/config")
     assert r.status_code == 200
+
+
+def test_websocket_rejected_without_auth(gate_env):
+    """WebSocket must not crash with AssertionError; close unauthorized."""
+    client = TestClient(create_app())
+    with pytest.raises(Exception):
+        with client.websocket_connect("/api/remote-browser/ws?profile=default"):
+            pass
+
+
+def test_websocket_accepts_with_access_cookie(gate_env, monkeypatch: pytest.MonkeyPatch):
+    """Regression: Request(scope) must not be used for websocket auth."""
+    monkeypatch.setenv("ENABLE_REMOTE_BROWSER", "false")
+    settings_mod.get_settings.cache_clear()
+    client = TestClient(create_app())
+    client.post("/login", data={"name": "owner", "password": "s3cret"})
+    with client.websocket_connect("/api/remote-browser/ws?profile=default") as ws:
+        msg = ws.receive_json()
+        assert msg.get("type") == "error"
+        assert "remote browser disabled" in (msg.get("error") or "").lower()

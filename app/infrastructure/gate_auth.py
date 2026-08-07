@@ -7,6 +7,7 @@ import time
 from typing import Any
 
 import jwt
+from starlette.datastructures import Headers
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -145,16 +146,41 @@ def clear_auth_cookies(response: Response, settings: Any) -> None:
             )
 
 
-def username_from_request(request: Request, settings: Any) -> str | None:
-    """Resolve authenticated username from access JWT cookie only."""
-    token = request.cookies.get(ACCESS_COOKIE)
+def cookies_from_scope(scope: Any) -> dict[str, str]:
+    """Parse Cookie header from ASGI scope (works for http and websocket)."""
+    headers = Headers(scope=scope)
+    raw = headers.get("cookie")
+    if not raw:
+        return {}
+    out: dict[str, str] = {}
+    for part in raw.split(";"):
+        if "=" not in part:
+            continue
+        name, value = part.split("=", 1)
+        name = name.strip()
+        if name:
+            out[name] = value.strip()
+    return out
+
+
+def username_from_cookies(cookies: dict[str, str], settings: Any) -> str | None:
+    token = cookies.get(ACCESS_COOKIE)
     if not token:
         return None
     return verify_access_token(settings.auth_secret(), token)
 
 
-def try_refresh_username(request: Request, settings: Any) -> str | None:
-    token = request.cookies.get(REFRESH_COOKIE)
+def try_refresh_from_cookies(cookies: dict[str, str], settings: Any) -> str | None:
+    token = cookies.get(REFRESH_COOKIE)
     if not token:
         return None
     return verify_refresh_token(settings.auth_secret(), token)
+
+
+def username_from_request(request: Request, settings: Any) -> str | None:
+    """Resolve authenticated username from access JWT cookie only."""
+    return username_from_cookies(request.cookies, settings)
+
+
+def try_refresh_username(request: Request, settings: Any) -> str | None:
+    return try_refresh_from_cookies(request.cookies, settings)

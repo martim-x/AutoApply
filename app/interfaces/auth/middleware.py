@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 from starlette.datastructures import Headers, MutableHeaders
-from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -14,9 +13,10 @@ from app.infrastructure.gate_auth import (
     ACCESS_MAX_AGE,
     ADMIN_SESSION_KEY,
     cookie_secure,
+    cookies_from_scope,
     issue_access_token,
-    try_refresh_username,
-    username_from_request,
+    try_refresh_from_cookies,
+    username_from_cookies,
     verify_access_token,
 )
 
@@ -78,18 +78,18 @@ class GateAuthMiddleware:
             await self.app(scope, receive, send)
             return
 
-        request = Request(scope, receive)
-        user = username_from_request(request, settings)
+        # Request() is HTTP-only — WebSocket must read cookies from the scope.
+        cookies = cookies_from_scope(scope)
+        user = username_from_cookies(cookies, settings)
         refreshed: str | None = None
 
         if user is None:
-            # Access missing/expired — try refresh cookie once.
-            access = request.cookies.get(ACCESS_COOKIE)
+            access = cookies.get(ACCESS_COOKIE)
             access_still_valid = bool(
                 access and verify_access_token(settings.auth_secret(), access)
             )
             if not access_still_valid:
-                refreshed = try_refresh_username(request, settings)
+                refreshed = try_refresh_from_cookies(cookies, settings)
                 if refreshed:
                     user = refreshed
 
