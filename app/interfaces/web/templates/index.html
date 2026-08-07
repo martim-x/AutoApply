@@ -276,7 +276,7 @@
             <span id="remoteUrl" class="remote-url"></span>
           </div>
           <div class="remote-actions">
-            <button type="button" id="btnRemoteKeyboard" class="ghost touch"
+            <button type="button" id="btnRemoteKeyboard" class="ghost touch remote-keyboard-btn"
               data-i18n="remote.keyboard" data-i18n-attr="title,aria-label"
               title="Клавиатура" aria-label="Клавиатура">
               <svg class="ico" aria-hidden="true"><use href="#i-keyboard"/></svg>
@@ -301,14 +301,16 @@
         </div>
         <div class="remote-stage">
           <canvas id="remoteCanvas" width="1280" height="900" tabindex="0"></canvas>
-          <textarea id="remoteTextInput" class="remote-text-input" rows="1"
-            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-            enterkeyhint="done" data-i18n="remote.keyboard" data-i18n-attr="aria-label"
-            aria-label="Клавиатура"></textarea>
           <p id="remoteOverlay" class="remote-overlay">Подключение…</p>
         </div>
-        <p class="remote-help" data-i18n="remote.help">Тап = клик. «Клавиатура» или долгий тап — экранная клавиатура.</p>
+        <p class="remote-help" data-i18n="remote.help">Тап по полю в трансляции, затем «Клавиатура» — откроется клавиатура телефона.</p>
       </div>
+      <!-- Outside overflow:hidden panel — iOS needs a real-sized editable field in-gesture. -->
+      <textarea id="remoteTextInput" class="remote-text-input" rows="1"
+        inputmode="text" enterkeyhint="done" readonly
+        autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+        data-i18n="remote.keyboard" data-i18n-attr="aria-label"
+        aria-label="Клавиатура"></textarea>
     </div>
 
     <section class="stats" id="statsGrid" data-workspace-panel="hh">

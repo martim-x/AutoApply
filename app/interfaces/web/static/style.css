@@ -1059,19 +1059,25 @@ a:hover { text-decoration: underline; }
 /* Remote modal — above panel expand, below launch/explain */
 .remote-modal {
   position: fixed;
-  inset: 0;
+  left: 0;
+  right: 0;
+  bottom: auto;
   z-index: var(--z-remote);
   background: var(--overlay-strong);
   display: flex;
   align-items: stretch;
   justify-content: center;
   padding: var(--space-2);
+  /* visualViewport JS sets --remote-vv-* when soft keyboard is open */
+  top: var(--remote-vv-top, 0px);
+  height: var(--remote-vv-height, 100dvh);
+  box-sizing: border-box;
 }
 .remote-modal[hidden] { display: none; }
 .remote-panel {
   width: min(1280px, 100%);
-  max-height: calc(100dvh - 1rem);
-  height: calc(100dvh - 1rem);
+  max-height: calc(var(--remote-vv-height, 100dvh) - 1rem);
+  height: calc(var(--remote-vv-height, 100dvh) - 1rem);
   display: flex;
   flex-direction: column;
   background: var(--panel);
@@ -1079,6 +1085,15 @@ a:hover { text-decoration: underline; }
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   overflow: hidden;
+}
+/* Soft-keyboard control: phones only (no fine pointer / hover). */
+.remote-keyboard-btn {
+  display: none !important;
+}
+@media (hover: none) and (pointer: coarse) {
+  .remote-keyboard-btn {
+    display: inline-flex !important;
+  }
 }
 .remote-modal.is-fullscreen {
   padding: 0;
@@ -1089,8 +1104,8 @@ a:hover { text-decoration: underline; }
 .remote-panel:-webkit-full-screen {
   width: 100%;
   max-width: none;
-  max-height: 100dvh;
-  height: 100dvh;
+  max-height: var(--remote-vv-height, 100dvh);
+  height: var(--remote-vv-height, 100dvh);
   border-radius: 0;
   border: none;
   box-shadow: none;
@@ -1145,24 +1160,39 @@ a:hover { text-decoration: underline; }
   background: #000;
   touch-action: none;
 }
-/* Focusable capture for iOS/Android soft keyboard — must not use display:none. */
+/*
+ * Soft-keyboard capture for iOS/Android.
+ * Must NOT use display:none / visibility:hidden / 0×0 / far off-screen —
+ * those block the soft keyboard. Keep a real-sized field near the viewport bottom.
+ */
 .remote-text-input {
-  position: absolute;
+  position: fixed;
   left: 0;
+  right: 0;
   bottom: 0;
-  width: 1px;
-  height: 1px;
+  width: 100%;
+  height: 40px;
   margin: 0;
-  padding: 0;
+  padding: 8px 12px;
   border: 0;
-  opacity: 0;
+  border-radius: 0;
+  opacity: 0.01;
   resize: none;
   overflow: hidden;
   caret-color: transparent;
+  color: transparent;
+  background: transparent;
   outline: none;
-  z-index: 2;
+  z-index: calc(var(--z-remote) + 1);
   pointer-events: none;
   font-size: 16px; /* avoid iOS zoom-on-focus */
+  line-height: 24px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.remote-text-input.is-active {
+  pointer-events: auto;
+  opacity: 0.02;
 }
 .remote-overlay {
   position: absolute;

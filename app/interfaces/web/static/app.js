@@ -1026,23 +1026,68 @@
     return e.key;
   }
 
-  function focusRemoteKeyboard() {
-    if (!remoteTextInput) return;
-    remoteTextInput.value = "";
-    // Soft keyboard only appears when focus is tied to a user gesture.
+  /** True on phone/tablet touch UIs — soft keyboard path, not desktop canvas keys. */
+  function wantsSoftKeyboard() {
     try {
-      remoteTextInput.focus({ preventScroll: true });
+      return window.matchMedia("(hover: none) and (pointer: coarse)").matches;
     } catch (_) {
-      remoteTextInput.focus();
+      return "ontouchstart" in window;
     }
+  }
+
+  /**
+   * iOS/Android have no Keyboard.show() API. Soft keyboard opens only when a real
+   * editable field is focused during a direct user gesture (touchend/click).
+   * Call this synchronously from the gesture handler — never after await/setTimeout.
+   */
+  function focusRemoteKeyboard() {
+    if (!remoteTextInput || !wantsSoftKeyboard()) return false;
+    const el = remoteTextInput;
+    // iOS: readonly until the gesture, then clear + focus in the same turn.
+    el.readOnly = false;
+    el.value = "";
+    el.classList.add("is-active");
+    try {
+      el.focus({ preventScroll: true });
+    } catch (_) {
+      try { el.focus(); } catch (__) {}
+    }
+    // Helps some iOS builds actually raise the soft keyboard after programmatic focus.
+    try {
+      if (typeof el.setSelectionRange === "function") el.setSelectionRange(0, 0);
+    } catch (_) {}
+    syncRemoteVisualViewport();
+    return document.activeElement === el;
+  }
+
+  function armRemoteKeyboardForGesture() {
+    if (!remoteTextInput || !wantsSoftKeyboard()) return;
+    // Prepare editable state before touchend/click focus (iOS Safari pattern).
+    remoteTextInput.readOnly = false;
   }
 
   function blurRemoteKeyboard() {
     if (!remoteTextInput) return;
     remoteTextInput.value = "";
+    remoteTextInput.classList.remove("is-active");
     try {
       remoteTextInput.blur();
     } catch (_) {}
+    remoteTextInput.readOnly = true;
+    syncRemoteVisualViewport();
+  }
+
+  function syncRemoteVisualViewport() {
+    if (!remoteModal) return;
+    const root = remoteModal;
+    if (root.hidden || !wantsSoftKeyboard() || !window.visualViewport) {
+      root.style.removeProperty("--remote-vv-top");
+      root.style.removeProperty("--remote-vv-height");
+      return;
+    }
+    const vv = window.visualViewport;
+    root.style.setProperty("--remote-vv-top", `${Math.round(vv.offsetTop)}px`);
+    root.style.setProperty("--remote-vv-height", `${Math.round(vv.height)}px`);
   }
 
   function sendRemoteKeyEvent(e) {
@@ -1069,7 +1114,9 @@
     remoteFsDesired = false;
     syncRemoteFullscreenUi();
     syncActionLabelsCached();
-    remoteCanvas.focus();
+    syncRemoteVisualViewport();
+    // Desktop: focus canvas for hardware keys. Mobile: leave unfocused until Keyboard/tap.
+    if (!wantsSoftKeyboard()) remoteCanvas.focus();
   }
 
   function closeRemoteModalUi() {
@@ -1083,6 +1130,7 @@
     }
     syncRemoteFullscreenUi();
     remoteModal.hidden = true;
+    syncRemoteVisualViewport();
     if (ws) {
       try { ws.close(); } catch (_) {}
       ws = null;
@@ -1120,7 +1168,7 @@
     ws = new WebSocket(wsUrl(remoteViewerWorkspace));
     ws.onopen = () => {
       setRemoteOverlay("remote.waiting_frames", true);
-      remoteCanvas.focus();
+      if (!wantsSoftKeyboard()) remoteCanvas.focus();
     };
     ws.onmessage = (ev) => {
       let msg;
@@ -1212,6 +1260,7 @@
     remoteTouchMoved = false;
     remoteTouchStartX = t0 ? t0.clientX : 0;
     remoteTouchStartY = t0 ? t0.clientY : 0;
+    if (wantsSoftKeyboard()) armRemoteKeyboardForGesture();
     send({ type: "mouse", event: "down", button: "left", ...scalePoint(e) });
   }, { passive: false });
   remoteCanvas.addEventListener("touchmove", (e) => {
@@ -1223,13 +1272,13 @@
   }, { passive: true });
   remoteCanvas.addEventListener("touchend", (e) => {
     e.preventDefault();
-    const heldMs = remoteTouchStartedAt ? Date.now() - remoteTouchStartedAt : 0;
-    const openKeyboard = !remoteTouchMoved && heldMs >= 480;
+    const wasTap = !remoteTouchMoved;
     remoteTouchStartedAt = 0;
     remoteTouchMoved = false;
     send({ type: "mouse", event: "up", button: "left", ...scalePoint(e) });
-    // Focus must run inside the gesture (touchend), not setTimeout — iOS requirement.
-    if (openKeyboard) focusRemoteKeyboard();
+    // Short tap: remote click + try soft keyboard in the same gesture (iOS requirement).
+    // Drag/scroll does not open the keyboard.
+    if (wasTap && wantsSoftKeyboard()) focusRemoteKeyboard();
   }, { passive: false });
   remoteCanvas.addEventListener("touchcancel", () => {
     remoteTouchStartedAt = 0;
@@ -1253,14 +1302,33 @@
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) return;
       sendRemoteKeyEvent(e);
     });
+    remoteTextInput.addEventListener("blur", () => {
+      remoteTextInput.classList.remove("is-active");
+      remoteTextInput.readOnly = true;
+      syncRemoteVisualViewport();
+    });
   }
 
   if (btnRemoteKeyboard) {
-    btnRemoteKeyboard.onclick = (e) => {
+    // Reliable soft-keyboard open: arm on touchstart, focus sync on touchend/click.
+    btnRemoteKeyboard.addEventListener("touchstart", () => {
+      armRemoteKeyboardForGesture();
+    }, { passive: true });
+    const openKbFromGesture = (e) => {
       e.preventDefault();
+      e.stopPropagation();
       focusRemoteKeyboard();
     };
+    btnRemoteKeyboard.addEventListener("touchend", openKbFromGesture, { passive: false });
+    btnRemoteKeyboard.addEventListener("click", openKbFromGesture);
   }
+
+  if (window.visualViewport) {
+    const onVv = () => syncRemoteVisualViewport();
+    window.visualViewport.addEventListener("resize", onVv);
+    window.visualViewport.addEventListener("scroll", onVv);
+  }
+  window.addEventListener("resize", () => syncRemoteVisualViewport());
 
   $("btnLogin").onclick = async () => {
     if (remoteEnabled) {
