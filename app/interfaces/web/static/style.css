@@ -77,6 +77,11 @@
   --radius: 10px;
   --shell-pad: 1rem;
   --shell-side: clamp(1rem, 8vw, 16.25rem);
+  /* Stacking: panel expand < remote < launch/explain */
+  --z-menu: 20;
+  --z-panel-fs: 50;
+  --z-remote: 60;
+  --z-modal: 70;
 }
 
 /* Dark — charcoal / black, saturated green, yellow warnings */
@@ -586,7 +591,7 @@ select, input[type="text"] {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  z-index: 20;
+  z-index: var(--z-menu);
   min-width: 11rem;
   padding: var(--space-1);
   border: 1px solid var(--line);
@@ -735,6 +740,7 @@ button:focus-visible {
 }
 
 .panels {
+  /* Mobile: natural height + page scroll. Desktop (≥860px): flex-fill leftover. */
   flex: 0 0 auto;
   display: grid;
   grid-template-columns: 1fr;
@@ -782,7 +788,7 @@ button:focus-visible {
 .panel.is-log-fullscreen {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: var(--z-panel-fs);
   width: 100% !important;
   height: 100dvh !important;
   max-height: none !important;
@@ -799,7 +805,8 @@ button:focus-visible {
 }
 .panel.is-log-fullscreen .log,
 .panel.is-log-fullscreen .table-wrap,
-.panel.is-log-fullscreen .vac-cards {
+.panel.is-log-fullscreen .vac-cards,
+.panel.is-log-fullscreen .empty-state {
   flex: 1 1 auto;
   min-height: 0;
 }
@@ -934,12 +941,12 @@ a:hover { text-decoration: underline; }
   word-break: break-word;
 }
 
-/* Launch criteria modal */
+/* Launch criteria modal — above panel fullscreen expand */
 .launch-modal,
 .explain-modal {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: var(--z-modal);
   background: var(--overlay);
   display: flex;
   align-items: flex-end;
@@ -1049,11 +1056,11 @@ a:hover { text-decoration: underline; }
 .w-pos { color: var(--high); font-family: var(--mono); }
 .w-neg { color: var(--danger); font-family: var(--mono); }
 
-/* Remote modal */
+/* Remote modal — above panel expand, below launch/explain */
 .remote-modal {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: var(--z-remote);
   background: var(--overlay-strong);
   display: flex;
   align-items: stretch;
@@ -1239,14 +1246,18 @@ a:hover { text-decoration: underline; }
     font-size: var(--font-ui);
   }
   .panels {
+    /* basis 0 → reliably absorb leftover 100dvh shell space */
+    flex: 1 1 0;
     grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto;
+    grid-template-rows: minmax(18rem, 1fr);
     align-items: stretch;
+    min-height: 18rem;
   }
   .panel-resizable {
-    height: min(52vh, 36rem);
+    /* Default = stretch to panels row; inline height from resize/localStorage wins */
+    height: 100%;
     min-height: 18rem;
-    max-height: 80vh;
+    max-height: none;
     resize: vertical;
   }
   .desktop-only {
@@ -1406,10 +1417,14 @@ a:hover { text-decoration: underline; }
 }
 .admin-foot a { color: var(--accent); }
 
-.logout-form { margin: 0; display: inline-flex; }
+.logout-form { margin: 0; display: inline-flex; flex-shrink: 0; }
 .logout-btn {
+  width: auto;
+  min-width: max-content;
+  padding: 0.35rem 0.75rem;
   font: inherit;
   font-size: var(--font-ui);
-  padding: 0.35rem 0.65rem;
+  white-space: nowrap;
+  word-break: keep-all;
   cursor: pointer;
 }

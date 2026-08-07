@@ -578,6 +578,9 @@
     if (logFullscreenId === "liVacPanel" && liTab !== "vacancies") {
       setLogFullscreen("liVacPanel", false);
     }
+    if (logFullscreenId === "liNetworkPanel" && liTab !== "network") {
+      setLogFullscreen("liNetworkPanel", false);
+    }
   }
 
   function initWorkspace() {
