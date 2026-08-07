@@ -37,10 +37,6 @@
   let workspace = "hh";
   let liTab = "network";
   let remoteFsDesired = false;
-  let remoteTouchStartedAt = 0;
-  let remoteTouchMoved = false;
-  let remoteTouchStartX = 0;
-  let remoteTouchStartY = 0;
   let logFullscreenId = null;
   const WORKSPACE_KEY = "aa-workspace";
   const PANEL_SIZE_KEY = "aa-panel-sizes";
@@ -1115,13 +1111,11 @@
     syncRemoteFullscreenUi();
     syncActionLabelsCached();
     syncRemoteVisualViewport();
-    // Desktop: focus canvas for hardware keys. Mobile: leave unfocused until Keyboard/tap.
+    // Desktop: focus canvas for hardware keys. Mobile: leave unfocused until Keyboard button.
     if (!wantsSoftKeyboard()) remoteCanvas.focus();
   }
 
   function closeRemoteModalUi() {
-    remoteTouchStartedAt = 0;
-    remoteTouchMoved = false;
     blurRemoteKeyboard();
     remoteFsDesired = false;
     if (remoteModal) remoteModal.classList.remove("is-fullscreen");
@@ -1253,37 +1247,16 @@
     });
   }, { passive: false });
   remoteCanvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  // Touch on the stream is remote mouse only — never focus the capture input
+  // (soft keyboard opens only via the Keyboard button; tap-to-focus shakes mobile UI).
   remoteCanvas.addEventListener("touchstart", (e) => {
     e.preventDefault();
-    const t0 = (e.touches && e.touches[0]) || null;
-    remoteTouchStartedAt = Date.now();
-    remoteTouchMoved = false;
-    remoteTouchStartX = t0 ? t0.clientX : 0;
-    remoteTouchStartY = t0 ? t0.clientY : 0;
-    if (wantsSoftKeyboard()) armRemoteKeyboardForGesture();
     send({ type: "mouse", event: "down", button: "left", ...scalePoint(e) });
   }, { passive: false });
-  remoteCanvas.addEventListener("touchmove", (e) => {
-    const t0 = (e.touches && e.touches[0]) || null;
-    if (!t0 || remoteTouchMoved) return;
-    const dx = t0.clientX - remoteTouchStartX;
-    const dy = t0.clientY - remoteTouchStartY;
-    if (dx * dx + dy * dy > 100) remoteTouchMoved = true; // ~10px
-  }, { passive: true });
   remoteCanvas.addEventListener("touchend", (e) => {
     e.preventDefault();
-    const wasTap = !remoteTouchMoved;
-    remoteTouchStartedAt = 0;
-    remoteTouchMoved = false;
     send({ type: "mouse", event: "up", button: "left", ...scalePoint(e) });
-    // Short tap: remote click + try soft keyboard in the same gesture (iOS requirement).
-    // Drag/scroll does not open the keyboard.
-    if (wasTap && wantsSoftKeyboard()) focusRemoteKeyboard();
   }, { passive: false });
-  remoteCanvas.addEventListener("touchcancel", () => {
-    remoteTouchStartedAt = 0;
-    remoteTouchMoved = false;
-  });
   remoteCanvas.addEventListener("keydown", (e) => {
     sendRemoteKeyEvent(e);
   });
