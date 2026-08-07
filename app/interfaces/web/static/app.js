@@ -717,7 +717,7 @@
 
   async function refreshLogs() {
     const data = await api(
-      `/api/logs?profile=${encodeURIComponent(profile())}&limit=50&service=hh`
+      `/api/logs?profile=${encodeURIComponent(profile())}&limit=10000&service=hh`
     );
     const list = $("logList");
     list.innerHTML = "";
@@ -840,7 +840,7 @@
 
   async function refreshLiLogs() {
     const data = await api(
-      `/api/logs?profile=${encodeURIComponent(profile())}&limit=50&service=linkedin`
+      `/api/logs?profile=${encodeURIComponent(profile())}&limit=10000&service=linkedin`
     );
     const list = $("liLogList");
     if (!list) return;
@@ -1776,10 +1776,58 @@
     });
   }
 
+  function initBackToTop() {
+    const btn = $("btnBackToTop");
+    if (!btn) return;
+    const THRESHOLD = 280;
+
+    function primaryScroller() {
+      if (logFullscreenId) {
+        const panel = $(logFullscreenId);
+        const nested =
+          panel && panel.querySelector(".log, .table-wrap, .vac-cards");
+        if (nested) return nested;
+      }
+      let bestEl = null;
+      let bestY = window.scrollY || document.documentElement.scrollTop || 0;
+      document.querySelectorAll(".log, .table-wrap, .vac-cards").forEach((el) => {
+        const y = el.scrollTop || 0;
+        if (y > bestY) {
+          bestY = y;
+          bestEl = el;
+        }
+      });
+      return bestEl;
+    }
+
+    function scrollYOf(el) {
+      if (!el) return window.scrollY || document.documentElement.scrollTop || 0;
+      return el.scrollTop || 0;
+    }
+
+    function sync() {
+      btn.hidden = scrollYOf(primaryScroller()) < THRESHOLD;
+    }
+
+    btn.addEventListener("click", () => {
+      const el = primaryScroller();
+      if (el) {
+        el.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+
+    document.addEventListener("scroll", sync, { passive: true, capture: true });
+    window.addEventListener("resize", sync, { passive: true });
+    sync();
+  }
+
   initTheme();
   initWorkspace();
   initPanelSizes();
   initLogFullscreen();
+  initBackToTop();
   if (window.AA_I18N) window.AA_I18N.initLang();
   setStatusMessage(t("status.ready"));
 

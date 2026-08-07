@@ -1,5 +1,16 @@
 """HH-platform (rabota.by) CSS selectors."""
 
+# Vacancy body only — avoid SERP chrome / «похожие вакансии» polluting keywords.
+VACANCY_DESCRIPTION_SELECTORS: tuple[str, ...] = (
+    '[data-qa="vacancy-description"]',
+    '[data-qa="vacancy__description"]',
+    'div[data-qa="vacancy-description"]',
+    ".vacancy-description",
+    '[data-qa="vacancy-description"] .g-user-content',
+    ".g-user-content.vacancy-description",
+    "#vacancy-description",
+)
+
 SEL = {
     "vacancy_link": (
         'a[data-qa="serp-item__title"],'
@@ -13,6 +24,7 @@ SEL = {
         'button:has-text("Откликнуться"),'
         'a:has-text("Откликнуться")'
     ),
+    "vacancy_description": ",".join(VACANCY_DESCRIPTION_SELECTORS),
     "company_name": (
         '[data-qa="vacancy-company-name"],'
         'a[data-qa="vacancy-company-name"],'

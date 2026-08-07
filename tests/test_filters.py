@@ -12,10 +12,12 @@ if str(ROOT) not in sys.path:
 from app.domain.filters import (
     evaluate_vacancy,
     has_python_signal,
+    has_python_title_gate,
     is_gov_related,
     is_remote_or_hybrid,
     looks_office_only,
 )
+from app.infrastructure.browser.gateway import pick_vacancy_description
 
 
 def test_gov_detection():
@@ -34,10 +36,19 @@ def test_office_only():
     assert looks_office_only("", "Работа только в офисе, без удалёнки")
 
 
-def test_python_signal():
+def test_python_signal_soft_vs_title_gate():
+    # Soft: description still counts for scoring bonus / legacy helpers.
     assert has_python_signal("Python-разработчик", "")
     assert has_python_signal("Backend", "Стек: Django, FastAPI")
     assert not has_python_signal("Java developer", "Spring Boot only")
+
+    # Hard title gate: description-only Python must not pass.
+    assert has_python_title_gate("Python-разработчик")
+    assert has_python_title_gate("Backend Python engineer")
+    assert has_python_title_gate("Django developer")
+    assert not has_python_title_gate("Backend engineer")
+    assert not has_python_title_gate("Java developer")
+    assert not has_python_title_gate("Менеджер по продажам")
 
 
 def test_evaluate_skips_gov():
@@ -73,3 +84,40 @@ def test_evaluate_passes_remote_python():
         require_python_keywords=True,
     )
     assert r.ok is True
+
+
+def test_evaluate_filters_sales_even_with_body_python_chrome():
+    chrome = (
+        "Менеджер по продажам B2B. Удалённо. "
+        "Похожие вакансии: Python-разработчик, Django backend, FastAPI engineer."
+    )
+    r = evaluate_vacancy(
+        "https://rabota.by/vacancy/sales",
+        "Менеджер по продажам",
+        chrome,
+        require_remote_or_hybrid=True,
+        require_python_keywords=True,
+    )
+    assert r.ok is False
+    assert r.reason == "filtered:no_python"
+
+
+def test_evaluate_filters_java_without_python_title():
+    r = evaluate_vacancy(
+        "https://rabota.by/vacancy/java",
+        "Java developer",
+        "Spring Boot. Nice to have: Python scripts. Remote.",
+        require_remote_or_hybrid=True,
+        require_python_keywords=True,
+    )
+    assert r.ok is False
+    assert r.reason == "filtered:no_python"
+
+
+def test_pick_vacancy_description_prefers_block_over_body():
+    desc = "Обязанности: разработка API на FastAPI. " * 5
+    body = desc + " Похожие вакансии: Python sales Java C# SEO"
+    assert pick_vacancy_description([desc], body_fallback=body) == desc.strip()[:80_000]
+    # empty/short blocks → fall back to body
+    short = pick_vacancy_description(["tiny"], body_fallback="x" * 100)
+    assert short.startswith("x")

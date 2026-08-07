@@ -38,10 +38,20 @@ PYTHON_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Title-level Python / target-stack gate (filter must-have).
 PYTHON_TITLE_STRONG_RE = re.compile(
     r"python[\s-]*(developer|разработчик|dev|engineer|инженер)|"
-    r"python[\s-]*разработчик|python[\s-]*developer|"
-    r"разработчик\s*\(?\s*python|developer\s*\(?\s*python",
+    r"(developer|разработчик|dev|engineer|инженер)[\s-]*python|"
+    r"разработчик\s*\(?\s*python|developer\s*\(?\s*python|"
+    r"\bpython\b|\bпитон\b|"
+    r"\bdjango\b|\bfastapi\b|\bflask\b",
+    re.IGNORECASE,
+)
+
+BACKEND_TITLE_RE = re.compile(
+    r"\bbackend\b|бэк[\s-]*енд|back[\s-]*end|"
+    r"серверн\w*\s*(разработ|engineer|dev)|"
+    r"backend[\s-]*(developer|разработчик|engineer|dev)",
     re.IGNORECASE,
 )
 
@@ -60,7 +70,24 @@ def looks_office_only(title: str = "", text: str = "") -> bool:
 
 
 def has_python_signal(title: str = "", text: str = "") -> bool:
+    """Soft: Python/Django/FastAPI anywhere (description bonus / legacy)."""
     return bool(PYTHON_RE.search(f"{title or ''}\n{text or ''}"))
+
+
+def has_python_title_gate(title: str = "") -> bool:
+    """
+    Hard filter: Python (or Django/FastAPI/Flask) in title, or
+    backend-role title that also names Python stack.
+    Description-only «nice to have» / similar-vacancies chrome must not pass.
+    """
+    t = title or ""
+    if not t.strip():
+        return False
+    if PYTHON_TITLE_STRONG_RE.search(t):
+        return True
+    if BACKEND_TITLE_RE.search(t) and PYTHON_RE.search(t):
+        return True
+    return False
 
 
 def _location_blocked(title: str, description: str, location: Any) -> bool:
@@ -87,7 +114,7 @@ def evaluate_vacancy(
     if skip_gov and is_gov_related(url, blob):
         return FilterResult(False, "filtered:gov")
 
-    if require_python_keywords and not has_python_signal(title, description):
+    if require_python_keywords and not has_python_title_gate(title):
         return FilterResult(False, "filtered:no_python")
 
     if require_remote_or_hybrid:

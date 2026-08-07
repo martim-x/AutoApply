@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "source": "Legend (Middle+ Python, FastAPI/Django, remote/hybrid, $2200–2800) + local vacancy samples",
+  "version": 3,
+  "source": "Legend (Middle+ Python backend, FastAPI/Django, remote/hybrid, $2200–2800) — role/stack first",
   "thresholds": {
     "high": 2.6,
     "medium": 0.65,
@@ -8,20 +8,38 @@
   },
   "signals": {
     "python_title_role": {
-      "weight": 0.92,
+      "weight": 1.0,
       "patterns": [
         "python[\\s-]*(developer|разработчик|dev|engineer|инженер)",
+        "(developer|разработчик|dev|engineer|инженер)[\\s-]*python",
         "разработчик\\s*\\(?\\s*python",
-        "developer\\s*\\(?\\s*python"
+        "developer\\s*\\(?\\s*python",
+        "\\bpython\\b",
+        "\\bпитон\\b",
+        "\\bdjango\\b",
+        "\\bfastapi\\b"
       ],
       "scope": "title",
       "label": "Python-роль в заголовке"
     },
+    "backend_title_role": {
+      "weight": 0.88,
+      "patterns": [
+        "\\bbackend\\b",
+        "бэк[\\s-]*енд",
+        "back[\\s-]*end",
+        "серверн\\w*\\s*(разработ|engineer|dev)",
+        "backend[\\s-]*(developer|разработчик|engineer|dev)"
+      ],
+      "scope": "title",
+      "label": "Backend-роль в заголовке"
+    },
     "python_stack": {
-      "weight": 0.58,
+      "weight": 0.32,
       "patterns": ["\\bpython\\b", "питон", "django", "fastapi", "flask"],
       "scope": "any",
-      "label": "Python в тексте"
+      "label": "Python в тексте (бонус)",
+      "suppress_if": ["python_title_role"]
     },
     "fastapi_match": {
       "weight": 0.72,
@@ -54,7 +72,7 @@
       "label": "Redis"
     },
     "containers_match": {
-      "weight": 0.42,
+      "weight": 0.28,
       "patterns": ["\\bdocker\\b", "kubernetes", "\\bk8s\\b", "\\bhelm\\b"],
       "scope": "any",
       "label": "Docker / K8s"
@@ -78,7 +96,7 @@
       "label": "SQLAlchemy / Alembic"
     },
     "remote_format": {
-      "weight": 0.70,
+      "weight": 0.42,
       "patterns": [
         "удал[её]нн\\w*",
         "\\bremote\\b",
@@ -92,13 +110,13 @@
       "label": "Удалёнка"
     },
     "hybrid_format": {
-      "weight": 0.52,
+      "weight": 0.36,
       "patterns": ["гибрид\\w*", "\\bhybrid\\b", "частично\\s*удал"],
       "scope": "any",
       "label": "Гибрид"
     },
     "salary_mentioned": {
-      "weight": 0.30,
+      "weight": 0.22,
       "patterns": [
         "\\d[\\d\\s]{2,5}\\s*(usd|\\$|бр|byn|руб)",
         "зарплат\\w*",
@@ -110,7 +128,7 @@
       "label": "Зарплата указана"
     },
     "middle_level": {
-      "weight": 0.44,
+      "weight": 0.40,
       "patterns": ["\\bmiddle\\+?\\b", "мидл", "middle[\\s/]+senior", "от\\s*3\\s*лет", "3[–-]6\\s*лет"],
       "scope": "any",
       "label": "Уровень Middle / Middle+"
@@ -128,7 +146,7 @@
       "label": "Микросервисы"
     },
     "description_quality": {
-      "weight": 0.22,
+      "weight": 0.18,
       "kind": "heuristic_description_quality",
       "label": "Развёрнутое описание"
     },
@@ -154,29 +172,93 @@
       "scope": "any",
       "label": "Только офис"
     },
+    "wrong_role_sales": {
+      "weight": -0.98,
+      "patterns": [
+        "менеджер\\s*по\\s*продаж",
+        "sales\\s*manager",
+        "account\\s*manager",
+        "\\bsales\\b",
+        "продаж\\w*",
+        "менеджер\\s*по\\s*работе\\s*с\\s*клиент",
+        "business\\s*development",
+        "\\bbdr\\b",
+        "\\bsdr\\b"
+      ],
+      "scope": "title",
+      "label": "Sales / продажи"
+    },
     "wrong_stack_php": {
-      "weight": -0.72,
+      "weight": -0.85,
       "patterns": ["\\bphp\\b", "битрикс", "\\bbitrix\\b", "wordpress", "1c\\b", "1с\\b"],
-      "scope": "any",
+      "scope": "title",
       "label": "Чужой стек (PHP/1C/Bitrix)"
     },
     "wrong_stack_java": {
-      "weight": -0.48,
-      "patterns": ["\\bjava\\b(?!script)", "spring\\s*boot"],
-      "scope": "any",
+      "weight": -0.92,
+      "patterns": ["\\bjava\\b(?!script)", "spring\\s*boot", "\\bkotlin\\b"],
+      "scope": "title",
       "label": "Java-роль"
     },
+    "wrong_stack_csharp": {
+      "weight": -0.92,
+      "patterns": [
+        "c\\s*#",
+        "\\bcsharp\\b",
+        "\\.net\\b",
+        "asp\\.net"
+      ],
+      "scope": "title",
+      "label": "C# / .NET-роль"
+    },
     "frontend_heavy": {
-      "weight": -0.52,
-      "patterns": ["\\bfrontend\\b", "фронтенд", "react\\b", "vue\\b", "angular"],
+      "weight": -0.70,
+      "patterns": ["\\bfrontend\\b", "фронтенд", "фронт[\\s-]*енд", "react\\b", "vue\\b", "angular"],
       "scope": "title",
       "label": "Frontend в title"
     },
     "qa_role": {
-      "weight": -0.62,
-      "patterns": ["\\bqa\\b", "тестировщик", "test\\s*engineer"],
+      "weight": -0.88,
+      "patterns": [
+        "\\bqa\\b",
+        "тестировщик",
+        "test\\s*engineer",
+        "manual\\s*qa",
+        "qa\\s*manual",
+        "ручн\\w*\\s*тест"
+      ],
       "scope": "title",
-      "label": "QA-роль"
+      "label": "QA / manual QA"
+    },
+    "wrong_role_rtl": {
+      "weight": -0.90,
+      "patterns": [
+        "\\brtl\\b",
+        "региональн\\w*\\s*технич",
+        "road\\s*team\\s*lead",
+        "retail\\s*team"
+      ],
+      "scope": "title",
+      "label": "RTL / не-backend роль"
+    },
+    "wrong_role_seo": {
+      "weight": -0.90,
+      "patterns": ["\\bseo\\b", "контекстн\\w*\\s*реклам", "\\bsmm\\b", "маркетолог"],
+      "scope": "title",
+      "label": "SEO / маркетинг"
+    },
+    "devops_only_role": {
+      "weight": -0.75,
+      "patterns": [
+        "\\bdevops\\b",
+        "sre\\b",
+        "platform\\s*engineer",
+        "infrastructure\\s*engineer",
+        "системн\\w*\\s*администратор"
+      ],
+      "scope": "title",
+      "label": "DevOps/SRE без Python",
+      "suppress_if": ["python_title_role"]
     },
     "intern_trainee": {
       "weight": -0.55,
@@ -202,11 +284,11 @@
       "suppress_if": ["middle_level", "python_title_role"]
     },
     "ml_only_role": {
-      "weight": -0.28,
+      "weight": -0.45,
       "patterns": ["\\bml\\s*engineer\\b", "data\\s*scientist", "machine\\s*learning"],
       "scope": "title",
       "label": "ML/DS вместо backend",
-      "suppress_if": ["fastapi_match", "django_match"]
+      "suppress_if": ["fastapi_match", "django_match", "python_title_role"]
     }
   },
   "explain_templates": {

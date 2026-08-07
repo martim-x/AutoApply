@@ -15,13 +15,21 @@ from app.domain.enums import FitCategory
 
 def test_high_python_remote_strong_stack():
     r = categorize_vacancy(
-        "Python-разработчик",
+        "Python backend-разработчик",
         "Удалённо. Стек: Django, FastAPI, PostgreSQL, Docker, pytest. "
         "Обязанности: разработка API. Требования: Middle.",
     )
     assert r.category == FitCategory.HIGH
     assert r.score >= 60
     assert r.explanation
+
+
+def test_sales_not_high():
+    r = categorize_vacancy(
+        "Менеджер по продажам",
+        "Удалённо. Похожие: Python Django FastAPI.",
+    )
+    assert r.category == FitCategory.LOW
 
 
 def test_medium_partial():

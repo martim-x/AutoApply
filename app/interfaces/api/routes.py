@@ -161,7 +161,7 @@ def create_api_router() -> APIRouter:
     def logs(
         request: Request,
         profile: str = Query(default="default"),
-        limit: int = Query(default=60, ge=1, le=200),
+        limit: int = Query(default=60, ge=1, le=10000),
         service: str | None = Query(default=None),
     ) -> dict[str, Any]:
         journal_service = (service or "").strip().lower() or None

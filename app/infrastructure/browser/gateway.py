@@ -30,13 +30,36 @@ from app.domain.parse_dedup import (
 )
 from app.domain.ports import UnitOfWork
 from app.infrastructure.browser.launch import launch_chromium, user_facing_browser_error
-from app.infrastructure.browser.selectors import SEL
+from app.infrastructure.browser.selectors import (
+    VACANCY_DESCRIPTION_SELECTORS,
+    SEL,
+)
 from app.infrastructure.settings import Settings
+
+# Minimum length before accepting a description node (skip empty stubs).
+_DESC_MIN_CHARS = 80
 
 
 def vacancy_id_from_url(url: str) -> str | None:
     m = re.search(r"/vacancy/(\d+)", url)
     return m.group(1) if m else None
+
+
+def pick_vacancy_description(
+    blocks: list[str],
+    *,
+    body_fallback: str = "",
+    min_chars: int = _DESC_MIN_CHARS,
+) -> str:
+    """
+    Prefer real vacancy description blocks over full-page body text.
+    Used by _page_text; pure helper for unit tests.
+    """
+    for text in blocks:
+        cleaned = (text or "").strip()
+        if len(cleaned) >= min_chars:
+            return cleaned[:80_000]
+    return (body_fallback or "")[:80_000]
 
 
 class PlaywrightBrowserGateway:
@@ -990,10 +1013,24 @@ class PlaywrightBrowserGateway:
 
     @staticmethod
     def _page_text(page) -> str:
+        """Vacancy description only — not full body (similar vacancies / chrome)."""
+        blocks: list[str] = []
+        for sel in VACANCY_DESCRIPTION_SELECTORS:
+            try:
+                loc = page.locator(sel).first
+                if loc.count() == 0:
+                    continue
+                text = loc.inner_text(timeout=3_000) or ""
+                if text.strip():
+                    blocks.append(text)
+            except Exception:
+                continue
+        body = ""
         try:
-            return (page.inner_text("body", timeout=5_000) or "")[:80_000]
+            body = page.inner_text("body", timeout=5_000) or ""
         except Exception:
-            return ""
+            body = ""
+        return pick_vacancy_description(blocks, body_fallback=body)
 
 
 def safe_run(

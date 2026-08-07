@@ -96,6 +96,9 @@
       <rect x="2" y="6" width="20" height="12" rx="2"/>
       <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M10 14h4M18 14h.01"/>
     </symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 19V5M5 12l7-7 7 7"/>
+    </symbol>
   </svg>
 
   <div class="shell" data-workspace="hh">
@@ -482,6 +485,12 @@
       <p class="message" id="liLaunchMessage"></p>
     </div>
   </div>
+
+  <button type="button" id="btnBackToTop" class="back-to-top touch icon-only" hidden
+    data-i18n="scroll.top" data-i18n-attr="aria-label,title"
+    title="Наверх" aria-label="Наверх">
+    <svg class="ico" aria-hidden="true"><use href="#i-arrow-up"/></svg>
+  </button>
 
   <div id="explainModal" class="explain-modal" hidden>
     <div class="explain-panel" role="dialog" aria-modal="true" aria-labelledby="explainTitle">

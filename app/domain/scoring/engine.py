@@ -15,6 +15,26 @@ from app.domain.scoring.models import ScoreBreakdown, SignalHit
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_WEIGHTS_PATH = ROOT / "config" / "weights.json"
 
+# Signals that prove target role/stack in the title (required for HIGH).
+_PYTHON_TITLE_SIGNAL_IDS = frozenset({"python_title_role"})
+
+# Wrong-role / wrong-stack signals — must not stay HIGH when they fire.
+_WRONG_FIT_SIGNAL_IDS = frozenset(
+    {
+        "wrong_role_sales",
+        "wrong_stack_php",
+        "wrong_stack_java",
+        "wrong_stack_csharp",
+        "frontend_heavy",
+        "qa_role",
+        "wrong_role_rtl",
+        "wrong_role_seo",
+        "devops_only_role",
+        "ml_only_role",
+        "intern_trainee",
+    }
+)
+
 
 def _compile_patterns(patterns: list[str]) -> list[re.Pattern[str]]:
     out: list[re.Pattern[str]] = []
@@ -239,23 +259,47 @@ def score_vacancy(
     else:
         category = FitCategory.LOW
 
-    # hard floors from strong negatives
+    # hard floors from strong negatives / role honesty
+    has_python_title = any(c.id in _PYTHON_TITLE_SIGNAL_IDS for c in contributions)
+    wrong_hits = [c for c in contributions if c.id in _WRONG_FIT_SIGNAL_IDS]
+    wrong_weight = sum(c.weight for c in wrong_hits)
+
     if any(c.id == "gov_marker" for c in contributions):
         category = FitCategory.LOW
         score = min(score, 25)
     if any(c.id == "location_other_city" for c in contributions):
         category = FitCategory.LOW
         score = min(score, 30)
-    if any(c.id == "salary_below" for c in contributions):
-        category = FitCategory.LOW if any(
-            abs(c.weight) >= 0.8 for c in contributions if c.id == "salary_below"
-        ) else category
-        score = min(score, 40)
     if any(c.id == "office_only" for c in contributions) and not any(
         c.id in ("remote_format", "hybrid_format") for c in contributions
     ):
         category = FitCategory.LOW
         score = min(score, 35)
+
+    # No Python-in-title → never HIGH (remote/city/salary must not inflate role fit).
+    if category == FitCategory.HIGH and not has_python_title:
+        category = FitCategory.MEDIUM
+        score = min(score, 72)
+
+    # Wrong stack/role dominates → demote out of HIGH (usually to LOW).
+    if wrong_hits:
+        if wrong_weight <= -0.7 or any(c.weight <= -0.85 for c in wrong_hits):
+            category = FitCategory.LOW
+            score = min(score, 35)
+        elif category == FitCategory.HIGH:
+            category = FitCategory.MEDIUM
+            score = min(score, 55)
+
+    if any(c.id == "salary_below" for c in contributions):
+        strong_below = any(
+            abs(c.weight) >= 0.8 for c in contributions if c.id == "salary_below"
+        )
+        if strong_below:
+            category = FitCategory.LOW
+        elif category == FitCategory.HIGH:
+            # Never leave HIGH with salary floor clamping score to ~40.
+            category = FitCategory.MEDIUM
+        score = min(score, 40)
 
     reason_codes = [
         c.id for c in sorted(contributions, key=lambda x: abs(x.weight), reverse=True)
