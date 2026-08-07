@@ -31,8 +31,8 @@ from app.domain.parse_dedup import (
 from app.domain.ports import UnitOfWork
 from app.infrastructure.browser.launch import launch_chromium, user_facing_browser_error
 from app.infrastructure.browser.selectors import (
-    VACANCY_DESCRIPTION_SELECTORS,
     SEL,
+    VACANCY_DESCRIPTION_SELECTORS,
 )
 from app.infrastructure.settings import Settings
 
