@@ -1,6 +1,12 @@
-# Fly.io + GitHub Actions (CI/CD)
+# Fly.io (деплой) и GitHub Actions (только CI)
 
-Деплой из GitHub: **ruff → mypy → pytest**, затем `flyctl deploy` на push в `main`.
+**GitHub Actions** ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)) — только проверки: `poetry install` → `ruff` → `mypy app` → `pytest` на PR и push в `main`. Деплоя из Actions нет.
+
+**Деплой** — отдельно:
+
+- [Fly.io GitHub integration](https://fly.io/docs/launch/continuous-deployment-with-github/) (автодеплой из репозитория), или
+- вручную: `fly deploy --app autoapply`, или
+- [Railway](./docker-railway.md) с подключением GitHub.
 
 Конфиг приложения: [`fly.toml`](../fly.toml) (Dockerfile, порт **8080**, volume `/app/data`, **2 GB** RAM под Playwright).
 
@@ -26,7 +32,7 @@ fly volumes create autoapply_data --region ams --size 3 --app autoapply
 
 Несекретные значения уже в `[env]` в `fly.toml` (`HEADLESS`, `DATA_DIR`, `DATABASE_URL`, …).
 
-Секреты — только через CLI:
+Секреты задаются на стороне Fly (не в GitHub Actions):
 
 ```bash
 # Admin UI (/admin)
@@ -58,11 +64,13 @@ fly secrets set \
   --app autoapply
 ```
 
+То же можно сделать в [Fly dashboard](https://fly.io/dashboard) → приложение → **Secrets**.
+
 Пароль из локального `.env` в git **не копировать**. Подставьте значения вручную.
 
 Проверка: `fly secrets list --app autoapply`
 
-Локальный деплой:
+Локальный / ручной деплой:
 
 ```bash
 fly deploy --app autoapply
@@ -72,30 +80,13 @@ fly deploy --app autoapply
 
 ---
 
-## GitHub Actions: `FLY_API_TOKEN`
-
-1. Создайте deploy-токен (предпочтительно):
-
-```bash
-fly tokens create deploy -x 999999h --app autoapply
-```
-
-Либо org/account token в [Fly dashboard → Tokens](https://fly.io/dashboard).
-
-2. В репозитории GitHub → **Settings → Secrets and variables → Actions** → New repository secret:
-
-| Name | Value |
-|------|--------|
-| `FLY_API_TOKEN` | вывод `fly tokens create deploy …` |
-
-Без этого секрета job **Deploy to Fly.io** упадёт после зелёного CI.
-
-Workflow: [`.github/workflows/ci-cd.yml`](../.github/workflows/ci-cd.yml)
+## GitHub Actions (CI only)
 
 | Событие | Что происходит |
 |---------|----------------|
 | PR / push в `main` | `poetry install` → `ruff` → `mypy app` → `pytest` |
-| push в `main` (после CI) | `flyctl deploy --remote-only` |
+
+Секрет `FLY_API_TOKEN` в GitHub Actions **не нужен** — Actions больше не вызывают `flyctl deploy`. Токен для автодеплоя настраивается в интеграции Fly ↔ GitHub (или вы деплоите вручную через CLI).
 
 ---
 
