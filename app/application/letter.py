@@ -21,6 +21,7 @@ import random
 import re
 import time
 import zlib
+from collections.abc import Sequence
 from pathlib import Path
 
 _OPTIONAL_BLOCK = re.compile(r"\{\{#(\w+)\}\}(.*?)\{\{/\1\}\}", re.DOTALL)
@@ -175,17 +176,18 @@ def load_letters(path: str | Path | None) -> list[str]:
 
 
 def pick_letter(
-    templates: list[str] | list[tuple[str, str]],
+    templates: Sequence[str | tuple[str, str]],
     *,
     style: str = "rotate",
     seed: str = "",
 ) -> str:
     """Pick a template by LETTER_STYLE or rotate (stable when seed is set)."""
-    pairs: list[tuple[str, str]]
-    if templates and isinstance(templates[0], tuple):
-        pairs = list(templates)  # type: ignore[arg-type]
-    else:
-        pairs = [(f"style_{i + 1}", t) for i, t in enumerate(templates)]  # type: ignore[arg-type]
+    pairs: list[tuple[str, str]] = []
+    for i, item in enumerate(templates):
+        if isinstance(item, str):
+            pairs.append((f"style_{i + 1}", item))
+        else:
+            pairs.append((item[0], item[1]))
 
     if not pairs:
         return _DEFAULT_LETTER
