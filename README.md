@@ -32,7 +32,7 @@ AutoApply закрывает ежедневный контур кандидат�
 | Launch-профиль HH | Сайт, страна, город, queries, remote/hybrid, skip gov, python-keywords, вилка USD, level, лимиты, dry_run |
 | Фильтры | Бинарный pass/fail до постановки в очередь (офис-only, gov, чужой город при `strict`, salary_strict) |
 | Scoring | Дерево весов `config/weights.json` → score 0-100 → HIGH / MEDIUM / LOW + Explain в UI |
-| Очередь откликов | Порядок HIGH → MEDIUM → LOW; письмо из `letter_universal.txt` |
+| Очередь откликов | Порядок HIGH → MEDIUM → LOW; письмо из `letters/` (`LETTER_STYLE`) |
 | LinkedIn workspace | Отдельная вкладка: Connect по people search, сбор vacancy links, свой `linkedin.launch.json` |
 | Remote browser | CDP screencast в модалке UI (логин на Docker / Railway / Fly без GUI) |
 | Профили | Несколько профилей с изолированными сессиями HH и LinkedIn |
@@ -106,7 +106,8 @@ config/             # areas, weights, launch*.example.json
 data/               # sqlite, sessions, reports (в git не коммитить секреты)
 docs/               # углублённые гайды
 tests/
-letter_universal.txt
+letters/            # шаблоны сопроводительных (3 стиля)
+letter_universal.txt  # legacy: один файл, если LETTER_PATH указывает на него
 ```
 
 Дополнительно:
@@ -178,7 +179,7 @@ ENABLE_REMOTE_BROWSER=false
 | `config/linkedin.launch.json` | Критерии LinkedIn (пример: `linkedin.launch.example.json`) |
 | `config/areas.json` | Каталог стран/городов → HH `area_id` |
 | `config/weights.json` | Дерево весов scoring |
-| `letter_universal.txt` | Текст отклика |
+| `letters/` | Шаблоны отклика (случайный стиль на каждый apply) |
 | `data/` | SQLite, `sessions/`, `reports/` (создаётся при старте) |
 
 Пока нет `launch.json`, сервис подхватывает example или defaults из `.env`.
@@ -214,7 +215,8 @@ docker compose up --build
 | `DEBUG` | нет | `false` | Режим отладки |
 | `DATA_DIR` | нет | `./data` | Корень данных |
 | `SESSIONS_DIR` | нет | `./data/sessions` | Cookies Playwright (можно не задавать) |
-| `LETTER_PATH` | нет | `./letter_universal.txt` | Файл письма |
+| `LETTER_PATH` | нет | `./letters` | Файл или каталог `*.txt` писем |
+| `LETTER_STYLE` | нет | `rotate` | `rotate` / `impact` / `responsibility` / `project` |
 | `LAUNCH_PATH` | нет | `./config/launch.json` | HH launch-профиль |
 | `LINKEDIN_LAUNCH_PATH` | нет | `./config/linkedin.launch.json` | LinkedIn launch |
 

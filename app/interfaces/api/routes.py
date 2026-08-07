@@ -238,6 +238,12 @@ def create_api_router() -> APIRouter:
     ) -> dict[str, Any]:
         return svc(request).save_linkedin_launch(body.launch)
 
+    @router.post("/linkedin/launch/validate")
+    def linkedin_launch_validate(
+        body: LinkedInLaunchBody, request: Request
+    ) -> dict[str, Any]:
+        return svc(request).validate_linkedin_launch(body.launch)
+
     @router.post("/linkedin/login")
     def linkedin_login(body: ProfileBody, request: Request) -> dict[str, Any]:
         return svc(request).start_linkedin_login(body.profile)

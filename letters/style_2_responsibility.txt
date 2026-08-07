@@ -1,0 +1,19 @@
+{Здравствуйте|Добрый день}!
+
+Я Python backend-разработчик, более 4.5 лет. Работаю с Django и FastAPI: от REST API и схем PostgreSQL до очередей, фона и CI/CD. Ищу позицию Middle+ в продуктовой команде.
+
+На платформе подписок для EdTech отвечал за subscription-service и часть assistant-service. Вёл API тарифов и подписок, trial и смену плана с proration, обмен через RabbitMQ и Kafka, потоковые выгрузки, observability в своих сервисах. В billing дописывал CRUD по более простым задачам.
+
+До этого на складском модуле ERP разрабатывал REST API для смены на ТСД и в браузере, оптимизировал выборки и отчёты, кешировал справочники в Redis, выносил Excel в Celery, поднимал coverage gate и разбирал инциденты на on-premise prod.
+
+Ключевые компетенции:
+• Ownership сервиса: API, схема, тесты, события
+• FastAPI / Django, SQLAlchemy / ORM, PostgreSQL, Redis
+• RabbitMQ (ack, retry, DLQ), Kafka activity, Celery Beat
+• Kubernetes, Helm, GitHub Actions; дежурства по Grafana и Sentry
+• RAG-контур: Ollama, Qwen 2.5, nomic-embed-text, pgvector, MCP
+
+{{#company}}Мне близок фокус {company} на backend и интеграциях. {{/company}}Умею доводить задачу до продакшена и нормально живу с ревью и on-call. Английский B2. Готов рассказать про зоны ответственности на созвоне.
+
+С уважением,
+Тимофей

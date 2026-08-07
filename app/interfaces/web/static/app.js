@@ -1370,6 +1370,14 @@
   if ($("btnLiStop")) {
     $("btnLiStop").onclick = () => requestStop();
   }
+  function setLiLaunchMessage(text, ok) {
+    const el = $("liLaunchMessage");
+    if (!el) return;
+    el.textContent = text ? truncateMsg(text, 200) : "";
+    el.classList.toggle("ok", !!ok);
+    el.classList.toggle("err", !ok && !!text);
+  }
+
   if ($("btnLiCriteria")) {
     $("btnLiCriteria").onclick = async () => {
       try {
@@ -1377,16 +1385,36 @@
         $("liLaunchText").value = JSON.stringify(data.launch || {}, null, 2);
         updateLiLaunch(data.launch);
         if (data.notifications) showNotifications(data.notifications);
-        $("liLaunchMessage").textContent = "";
+        setLiLaunchMessage("", false);
       } catch (e) {
-        $("liLaunchMessage").textContent = truncateMsg(String(e.message || e), 200);
+        setLiLaunchMessage(String(e.message || e), false);
       }
       $("liLaunchModal").hidden = false;
     };
   }
+
   if ($("btnLiLaunchClose")) {
     $("btnLiLaunchClose").onclick = () => {
       $("liLaunchModal").hidden = true;
+    };
+  }
+  if ($("btnLiLaunchValidate")) {
+    $("btnLiLaunchValidate").onclick = async () => {
+      try {
+        const launch = JSON.parse($("liLaunchText").value || "{}");
+        const r = await api("/api/linkedin/launch/validate", {
+          method: "POST",
+          body: JSON.stringify({ launch }),
+        });
+        if (!r.ok) {
+          setLiLaunchMessage(r.error || t("launch.err.validate"), false);
+          return;
+        }
+        setLiLaunchMessage(t("launch.ok"), true);
+        updateLiLaunch(r.launch || launch);
+      } catch (e) {
+        setLiLaunchMessage(String(e.message || e), false);
+      }
     };
   }
   if ($("btnLiLaunchSave")) {
@@ -1398,21 +1426,15 @@
           body: JSON.stringify({ launch }),
         });
         if (!r.ok) {
-          $("liLaunchMessage").textContent = truncateMsg(
-            r.error || t("launch.err.save"),
-            200
-          );
+          setLiLaunchMessage(r.error || t("launch.err.save"), false);
           return;
         }
         updateLiLaunch(r.launch || launch);
-        $("liLaunchMessage").textContent = truncateMsg(
-          t("launch.saved", { path: r.path }),
-          200
-        );
+        setLiLaunchMessage(t("launch.saved", { path: r.path }), true);
         $("liLaunchModal").hidden = true;
         await refreshAll();
       } catch (e) {
-        $("liLaunchMessage").textContent = truncateMsg(String(e.message || e), 200);
+        setLiLaunchMessage(String(e.message || e), false);
       }
     };
   }

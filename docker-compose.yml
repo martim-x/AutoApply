@@ -10,7 +10,7 @@ services:
       # Override paths inside container; secrets still from .env
       DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/auto_apply_app.sqlite}
       DATA_DIR: /app/data
-      LETTER_PATH: /app/letter_universal.txt
+      LETTER_PATH: /app/letters
       LAUNCH_PATH: /app/config/launch.json
       LINKEDIN_LAUNCH_PATH: /app/config/linkedin.launch.json
       PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
@@ -33,7 +33,7 @@ services:
       # Fresh empty DB: delete ./data/auto_apply_app.sqlite (or set RESET_DB=true once).
       # Legacy rabota_apply.sqlite is renamed to auto_apply_app.sqlite on startup if needed.
       - ./data:/app/data
-      - ./letter_universal.txt:/app/letter_universal.txt:ro
+      - ./letters:/app/letters:ro
       # So /admin can edit .env and changes survive restart
       - ./.env:/app/.env
       - ./config:/app/config

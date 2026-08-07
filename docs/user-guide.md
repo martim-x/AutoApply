@@ -150,7 +150,7 @@ queries: python developer
 
 Порядок: **HIGH → MEDIUM → LOW** среди `queued`.
 
-- Текст письма: `letter_universal.txt`  
+- Текст письма: каталог `letters/` (`LETTER_PATH`, стиль через `LETTER_STYLE`)  
 - Лимиты: `MAX_PER_HOUR` / `MAX_PER_DAY` + паузы из `.env`  
 - `dry_run: true` в launch — пройти сценарий **без** реальной отправки  
 

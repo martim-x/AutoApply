@@ -100,8 +100,10 @@ LOW в очереди возможен (мало плюсов, но фильтр
 
 ## Сопроводительное письмо
 
-`letter_universal.txt` — универсальный текст отклика.  
-В Legend есть варианты писем (`Сопроводительные_письма.md`); в бот сейчас один файл — правьте его под актуальный тон.
+`letters/` — три стиля: `style_1_impact`, `style_2_responsibility`, `style_3_project`.
+`LETTER_STYLE=rotate` (стабильно по URL вакансии) или `impact` / `responsibility` / `project`.
+`{company}` и блок `{{#company}}…{{/company}}`: нет компании → фраза вырезается (без `None`).
+`LETTER_PATH` — каталог или один `.txt` (legacy: `letter_universal.txt`).
 
 ---
 

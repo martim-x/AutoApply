@@ -32,7 +32,7 @@ Typical day: start the service → check launch criteria → Login → Search �
 | HH launch profile | Site, country, city, queries, remote/hybrid, skip gov, python keywords, USD salary band, level, limits, dry_run |
 | Filters | Binary pass/fail before queueing (office-only, gov, other city when `strict`, salary_strict) |
 | Scoring | Weight tree in `config/weights.json` → score 0-100 → HIGH / MEDIUM / LOW + Explain in the UI |
-| Apply queue | Order HIGH → MEDIUM → LOW; cover letter from `letter_universal.txt` |
+| Apply queue | Order HIGH → MEDIUM → LOW; cover letter from `letters/` (`LETTER_STYLE`) |
 | LinkedIn workspace | Separate tab: Connect via people search, collect vacancy links, own `linkedin.launch.json` |
 | Remote browser | CDP screencast in a UI modal (login on Docker / Railway / Fly without a host GUI) |
 | Profiles | Multiple profiles with isolated HH and LinkedIn sessions |
@@ -106,7 +106,8 @@ config/             # areas, weights, launch*.example.json
 data/               # sqlite, sessions, reports (do not commit secrets)
 docs/               # deeper guides
 tests/
-letter_universal.txt
+letters/              # cover letter templates (3 styles)
+letter_universal.txt  # legacy single-file LETTER_PATH
 ```
 
 Further reading:
@@ -178,7 +179,7 @@ Config to check before the first Search:
 | `config/linkedin.launch.json` | LinkedIn criteria (example: `linkedin.launch.example.json`) |
 | `config/areas.json` | Country/city catalog → HH `area_id` |
 | `config/weights.json` | Scoring weight tree |
-| `letter_universal.txt` | Cover letter text |
+| `letters/` | Cover letter templates (impact / responsibility / project) |
 | `data/` | SQLite, `sessions/`, `reports/` (created on startup) |
 
 If `launch.json` is missing, the service falls back to the example file or `.env` defaults.
@@ -214,7 +215,8 @@ Source of truth: [`.env.example`](.env.example) and `app/infrastructure/settings
 | `DEBUG` | no | `false` | Debug flag |
 | `DATA_DIR` | no | `./data` | Data root |
 | `SESSIONS_DIR` | no | `./data/sessions` | Playwright cookies (optional to set) |
-| `LETTER_PATH` | no | `./letter_universal.txt` | Cover letter file |
+| `LETTER_PATH` | no | `./letters` | Letter file or directory of `*.txt` |
+| `LETTER_STYLE` | no | `rotate` | `rotate` / `impact` / `responsibility` / `project` |
 | `LAUNCH_PATH` | no | `./config/launch.json` | HH launch profile |
 | `LINKEDIN_LAUNCH_PATH` | no | `./config/linkedin.launch.json` | LinkedIn launch |
 

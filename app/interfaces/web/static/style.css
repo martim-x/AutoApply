@@ -1016,8 +1016,10 @@ a:hover { text-decoration: underline; }
 }
 #launchMessage { margin-top: var(--space-2); }
 #launchMessage:empty { display: none; }
-#launchMessage.ok { color: var(--done); }
-#launchMessage.err { color: var(--error); }
+#launchMessage.ok,
+#liLaunchMessage.ok { color: var(--done); }
+#launchMessage.err,
+#liLaunchMessage.err { color: var(--error); }
 .explain-meta {
   margin: var(--space-2) 0 var(--space-2);
   color: var(--muted);

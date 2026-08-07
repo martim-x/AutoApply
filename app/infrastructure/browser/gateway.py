@@ -9,7 +9,12 @@ from typing import Any
 from urllib.parse import quote_plus, urljoin, urlparse
 
 from app.application.alerts import AlertService, get_alert_service
-from app.application.letter import RateLimiter, load_letter, render_letter
+from app.application.letter import (
+    RateLimiter,
+    load_letter_templates,
+    pick_letter,
+    render_letter,
+)
 from app.domain.categorize import categorize_vacancy
 from app.domain.entities import Application, Vacancy
 from app.domain.enums import ApplyStatus, FitCategory, JobStatus
@@ -551,7 +556,8 @@ class PlaywrightBrowserGateway:
             uow.jobs.set_status(profile, JobStatus.DONE, "Очередь пуста — сначала Search")
             return
 
-        template = load_letter(s.letter_path)
+        templates = load_letter_templates(s.letter_path)
+        letter_style = (s.letter_style or "rotate").strip().lower()
         limiter = RateLimiter(s.min_action_interval, s.jitter)
         dry_run = bool(flags["dry_run"])
         uow.jobs.set_status(
@@ -627,7 +633,18 @@ class PlaywrightBrowserGateway:
                             if not decision.ok:
                                 status, attempts = decision.status, 0
                             else:
-                                letter = render_letter(template, vacancy_name=title)
+                                company = self._company_from_page(page)
+                                template = pick_letter(
+                                    templates,
+                                    style=letter_style,
+                                    seed=vac.url or title,
+                                )
+                                letter = render_letter(
+                                    template,
+                                    title=title,
+                                    company=company,
+                                    vacancy_name=title,
+                                )
                                 status = "error:unknown"
                                 attempts = 0
                                 for attempts in range(1, s.apply_retries + 1):
@@ -958,6 +975,18 @@ class PlaywrightBrowserGateway:
             pass
         page.wait_for_timeout(800)
         return "applied"
+
+    @staticmethod
+    def _company_from_page(page) -> str:
+        """Best-effort employer name from HH vacancy page (empty if missing)."""
+        try:
+            loc = page.locator(SEL["company_name"]).first
+            if loc.count() == 0:
+                return ""
+            text = (loc.inner_text(timeout=1500) or "").strip()
+            return text[:120] if text else ""
+        except Exception:
+            return ""
 
     @staticmethod
     def _page_text(page) -> str:

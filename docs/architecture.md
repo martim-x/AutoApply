@@ -198,7 +198,7 @@ config/
   launch.example.json
 docs/               # эта документация
 tests/
-letter_universal.txt
+letters/                 # cover letter templates (LETTER_PATH)
 ```
 
 ---

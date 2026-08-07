@@ -13,6 +13,12 @@ SEL = {
         'button:has-text("Откликнуться"),'
         'a:has-text("Откликнуться")'
     ),
+    "company_name": (
+        '[data-qa="vacancy-company-name"],'
+        'a[data-qa="vacancy-company-name"],'
+        '[data-qa="vacancy__company-name"],'
+        '.vacancy-company-name'
+    ),
     "letter_area": (
         'textarea[data-qa="vacancy-response-popup-form-letter-input"],'
         'textarea[data-qa="textarea-letter"],'

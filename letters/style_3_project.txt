@@ -1,0 +1,19 @@
+{Здравствуйте|Добрый день}!
+
+Откликаюсь на позицию Python backend-разработчика{{#company}} в {company}{{/company}}.
+
+Последние ~2 года 4 месяца: backend B2B-платформы подписок для обучающих сервисов. Микросервисы на FastAPI в Kubernetes. Я вёл subscription-service, события в RabbitMQ и Kafka и часть assistant-service на self-hosted Ollama и pgvector. До этого ~2 года 6 месяцев: Django-монолит складского модуля для промышленности, on-premise. Писал REST API смены, ускорял PostgreSQL, кеш в Redis, фон в Celery.
+
+На платформе подписок: критичный путь оплаты на RabbitMQ; живые соединения к PostgreSQL при выкладках примерно 30-40 через PgBouncer; API тарифов для продуктовой команды; интеграционные тесты на testcontainers в CI; выгрузки без OOM; помощник закрывает порядка 60% tier-1. На складе: список задач на ТСД примерно 250-350 мс вместо 2-3 с; отчёт загруженности 2-3 с вместо 40-60 с; покрытие в зоне более 85%; инциденты реже.
+
+Ключевые компетенции:
+• Python, FastAPI, Django, Pydantic, SQLAlchemy
+• PostgreSQL, Redis, RabbitMQ, Kafka, Celery
+• Docker, Kubernetes, Helm, GitHub Actions, GitLab CI
+• pytest, Prometheus, Grafana, Loki, Sentry, OpenTelemetry
+• Ollama, MCP, pgvector
+
+{{#company}}Хочу лучше понять продукт и инженерный контур {company}. {{/company}}Готов рассказать про проекты на созвоне.
+
+С уважением,
+Тимофей

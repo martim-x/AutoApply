@@ -227,7 +227,7 @@ SERP сортируется по дате (`order_by=publication_time` / LinkedI
 | `config/areas.json` | каталог стран/городов → `area_id` |
 | `data/auto_apply_app.sqlite` | очередь, логи, статусы (создаётся пустой при первом старте; legacy `rabota_apply.sqlite` переименовывается; `RESET_DB=true` — разовый сброс) |
 | `data/sessions/<profile>.storage.json` | cookies Playwright |
-| `letter_universal.txt` | текст отклика |
+| `letters/` | шаблоны сопроводительных (3 стиля) |
 | `.env` | секреты и оверрайды (не коммитить) |
 
 ---

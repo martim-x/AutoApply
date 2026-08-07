@@ -648,6 +648,18 @@ class AppService:
             "launch": profile.to_public_dict(),
         }
 
+    def validate_linkedin_launch(self, data: dict[str, Any]) -> dict[str, Any]:
+        from app.domain.linkedin_profile import validate_linkedin_dict
+
+        try:
+            profile = validate_linkedin_dict(data)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        return {
+            "ok": True,
+            "launch": profile.to_public_dict(),
+        }
+
     def list_linkedin_contacts(
         self, profile: str = "default", limit: int = 100
     ) -> list[dict[str, Any]]:

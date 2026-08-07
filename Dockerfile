@@ -48,6 +48,7 @@ COPY --from=deps /ms-playwright /ms-playwright
 
 # Application (no .env / data — excluded via .dockerignore; secrets via compose mounts).
 COPY app ./app
+COPY letters ./letters
 COPY letter_universal.txt ./letter_universal.txt
 COPY pyproject.toml poetry.lock ./
 COPY config/areas.json config/weights.json \

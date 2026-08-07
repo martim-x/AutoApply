@@ -47,7 +47,10 @@ class Settings(BaseSettings):
     reset_db: bool = False
     data_dir: Path = Field(default=ROOT / "data")
     sessions_dir: Path | None = Field(default=None)
-    letter_path: Path = Field(default=ROOT / "letter_universal.txt")
+    # File or directory of *.txt templates (see LETTER_STYLE).
+    letter_path: Path = Field(default=ROOT / "letters")
+    # rotate | impact | responsibility | project | filename stem
+    letter_style: str = "rotate"
     launch_path: Path = Field(default=ROOT / "config" / "launch.json")
     linkedin_launch_path: Path = Field(
         default=ROOT / "config" / "linkedin.launch.json"
