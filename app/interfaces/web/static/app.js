@@ -10,7 +10,9 @@
   const remoteCanvas = $("remoteCanvas");
   const remoteOverlay = $("remoteOverlay");
   const remoteUrl = $("remoteUrl");
+  const remoteTextInput = $("remoteTextInput");
   const btnRemoteFullscreen = $("btnRemoteFullscreen");
+  const btnRemoteKeyboard = $("btnRemoteKeyboard");
   const explainModal = $("explainModal");
   const launchModal = $("launchModal");
   const ctx = remoteCanvas.getContext("2d");
@@ -35,6 +37,10 @@
   let workspace = "hh";
   let liTab = "network";
   let remoteFsDesired = false;
+  let remoteTouchStartedAt = 0;
+  let remoteTouchMoved = false;
+  let remoteTouchStartX = 0;
+  let remoteTouchStartY = 0;
   let logFullscreenId = null;
   const WORKSPACE_KEY = "aa-workspace";
   const PANEL_SIZE_KEY = "aa-panel-sizes";
@@ -1020,6 +1026,41 @@
     return e.key;
   }
 
+  function focusRemoteKeyboard() {
+    if (!remoteTextInput) return;
+    remoteTextInput.value = "";
+    // Soft keyboard only appears when focus is tied to a user gesture.
+    try {
+      remoteTextInput.focus({ preventScroll: true });
+    } catch (_) {
+      remoteTextInput.focus();
+    }
+  }
+
+  function blurRemoteKeyboard() {
+    if (!remoteTextInput) return;
+    remoteTextInput.value = "";
+    try {
+      remoteTextInput.blur();
+    } catch (_) {}
+  }
+
+  function sendRemoteKeyEvent(e) {
+    if (e.key === "Escape" && isRemoteFullscreen()) {
+      e.preventDefault();
+      e.stopPropagation();
+      exitRemoteFullscreen();
+      return true;
+    }
+    e.preventDefault();
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      send({ type: "key", event: "type", text: e.key });
+      return true;
+    }
+    send({ type: "key", event: "press", key: mapKey(e) });
+    return true;
+  }
+
   function openRemoteModal() {
     remoteModal.hidden = false;
     remoteOverlay.hidden = false;
@@ -1032,6 +1073,9 @@
   }
 
   function closeRemoteModalUi() {
+    remoteTouchStartedAt = 0;
+    remoteTouchMoved = false;
+    blurRemoteKeyboard();
     remoteFsDesired = false;
     if (remoteModal) remoteModal.classList.remove("is-fullscreen");
     if (document.fullscreenElement) {
@@ -1163,27 +1207,60 @@
   remoteCanvas.addEventListener("contextmenu", (e) => e.preventDefault());
   remoteCanvas.addEventListener("touchstart", (e) => {
     e.preventDefault();
-    remoteCanvas.focus();
+    const t0 = (e.touches && e.touches[0]) || null;
+    remoteTouchStartedAt = Date.now();
+    remoteTouchMoved = false;
+    remoteTouchStartX = t0 ? t0.clientX : 0;
+    remoteTouchStartY = t0 ? t0.clientY : 0;
     send({ type: "mouse", event: "down", button: "left", ...scalePoint(e) });
   }, { passive: false });
+  remoteCanvas.addEventListener("touchmove", (e) => {
+    const t0 = (e.touches && e.touches[0]) || null;
+    if (!t0 || remoteTouchMoved) return;
+    const dx = t0.clientX - remoteTouchStartX;
+    const dy = t0.clientY - remoteTouchStartY;
+    if (dx * dx + dy * dy > 100) remoteTouchMoved = true; // ~10px
+  }, { passive: true });
   remoteCanvas.addEventListener("touchend", (e) => {
     e.preventDefault();
+    const heldMs = remoteTouchStartedAt ? Date.now() - remoteTouchStartedAt : 0;
+    const openKeyboard = !remoteTouchMoved && heldMs >= 480;
+    remoteTouchStartedAt = 0;
+    remoteTouchMoved = false;
     send({ type: "mouse", event: "up", button: "left", ...scalePoint(e) });
+    // Focus must run inside the gesture (touchend), not setTimeout — iOS requirement.
+    if (openKeyboard) focusRemoteKeyboard();
   }, { passive: false });
-  remoteCanvas.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && isRemoteFullscreen()) {
-      e.preventDefault();
-      e.stopPropagation();
-      exitRemoteFullscreen();
-      return;
-    }
-    e.preventDefault();
-    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      send({ type: "key", event: "type", text: e.key });
-      return;
-    }
-    send({ type: "key", event: "press", key: mapKey(e) });
+  remoteCanvas.addEventListener("touchcancel", () => {
+    remoteTouchStartedAt = 0;
+    remoteTouchMoved = false;
   });
+  remoteCanvas.addEventListener("keydown", (e) => {
+    sendRemoteKeyEvent(e);
+  });
+
+  if (remoteTextInput) {
+    // Printable text from soft keyboards (IME / Android) — prefer input over keydown.
+    remoteTextInput.addEventListener("input", () => {
+      const text = remoteTextInput.value;
+      if (!text) return;
+      send({ type: "key", event: "type", text });
+      remoteTextInput.value = "";
+    });
+    remoteTextInput.addEventListener("keydown", (e) => {
+      // Let composition / printable chars land in the input event.
+      if (e.isComposing || e.key === "Process" || e.key === "Unidentified") return;
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) return;
+      sendRemoteKeyEvent(e);
+    });
+  }
+
+  if (btnRemoteKeyboard) {
+    btnRemoteKeyboard.onclick = (e) => {
+      e.preventDefault();
+      focusRemoteKeyboard();
+    };
+  }
 
   $("btnLogin").onclick = async () => {
     if (remoteEnabled) {

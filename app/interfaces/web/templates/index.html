@@ -92,6 +92,10 @@
     <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
       <path d="M12 3v12M7 11l5 5 5-5M5 21h14"/>
     </symbol>
+    <symbol id="i-keyboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="6" width="20" height="12" rx="2"/>
+      <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M10 14h4M18 14h.01"/>
+    </symbol>
   </svg>
 
   <div class="shell" data-workspace="hh">
@@ -272,6 +276,12 @@
             <span id="remoteUrl" class="remote-url"></span>
           </div>
           <div class="remote-actions">
+            <button type="button" id="btnRemoteKeyboard" class="ghost touch"
+              data-i18n="remote.keyboard" data-i18n-attr="title,aria-label"
+              title="Клавиатура" aria-label="Клавиатура">
+              <svg class="ico" aria-hidden="true"><use href="#i-keyboard"/></svg>
+              <span class="btn-label" data-i18n="remote.keyboard">Клавиатура</span>
+            </button>
             <button type="button" id="btnRemoteFullscreen" class="ghost touch"
               data-i18n="remote.fullscreen" data-i18n-attr="title,aria-label"
               title="На весь экран" aria-label="На весь экран">
@@ -291,9 +301,13 @@
         </div>
         <div class="remote-stage">
           <canvas id="remoteCanvas" width="1280" height="900" tabindex="0"></canvas>
+          <textarea id="remoteTextInput" class="remote-text-input" rows="1"
+            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+            enterkeyhint="done" data-i18n="remote.keyboard" data-i18n-attr="aria-label"
+            aria-label="Клавиатура"></textarea>
           <p id="remoteOverlay" class="remote-overlay">Подключение…</p>
         </div>
-        <p class="remote-help" data-i18n="remote.help">Тап/клик = фокус. Ввод идёт на серверный Chromium.</p>
+        <p class="remote-help" data-i18n="remote.help">Тап = клик. «Клавиатура» или долгий тап — экранная клавиатура.</p>
       </div>
     </div>
 
