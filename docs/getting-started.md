@@ -207,7 +207,9 @@ Timezone — IANA (`Europe/Minsk` и т.п.); час/минута считают
 Локально по умолчанию `PARSE_SCHEDULE_ENABLED=false`. На Railway — `true` после сохранения сессий.
 
 Времена, timezone, bitmask задач и флаг email после cron живут в `launch.json` → `schedule` (редактор в UI «Критерии»).  
+Смена времён в **Criteria → Save** подхватывается процессом **без redeploy** (планировщик перечитывает `launch.json` каждые ≤30 с; после Save — сразу).  
 `PARSE_SCHEDULE_ENABLED` — **kill-switch** в env: `false` глушит стрельбу даже если в профиле `enabled=true`.  
+Первый перевод kill-switch `false`→`true` по-прежнему требует **рестарта** процесса (иначе цикл планировщика не стартует).  
 `PARSE_SCHEDULE_TIMES` / `PARSE_SCHEDULE_TIMEZONE` — fallback, если в launch нет `schedule`.
 
 ```env

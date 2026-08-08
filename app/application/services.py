@@ -542,6 +542,7 @@ class AppService:
             "launch_saved",
             f"{profile.site} / {profile.location.country} / {profile.location.city}",
         )
+        self._nudge_schedulers()
         return {
             "ok": True,
             "path": str(path),
@@ -561,12 +562,22 @@ class AppService:
         except Exception as e:
             return {"ok": False, "error": str(e)}
         path = save_launch_profile(profile, self.settings.launch_path)
+        self._nudge_schedulers()
         return {
             "ok": True,
             "path": str(path),
             "launch": profile.to_public_dict(),
             "strict_text": launch_to_strict_text(profile),
         }
+
+    def _nudge_schedulers(self) -> None:
+        """Wake in-process schedulers so launch.schedule edits reschedule ASAP."""
+        for sched in (self.parse_scheduler, self.scheduler):
+            if sched is not None and hasattr(sched, "nudge"):
+                try:
+                    sched.nudge()
+                except Exception:
+                    pass
 
     def validate_launch_text(self, text: str) -> dict[str, Any]:
         from app.domain.launch_profile import (

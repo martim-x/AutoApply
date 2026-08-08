@@ -17,6 +17,10 @@ from app.infrastructure.timefmt import resolve_tz, stamp_now
 
 log = logging.getLogger(__name__)
 
+# Re-read launch.json / env schedule at least this often so UI edits apply
+# without process restart (sleep is min(POLL, seconds_until_next)).
+SCHEDULE_POLL_SECONDS = 30.0
+
 # Re-export for callers/tests that import resolve_tz from scheduler.
 __all__ = [
     "resolve_tz",
@@ -27,7 +31,39 @@ __all__ = [
     "ParseScheduler",
     "resolve_effective_parse_schedule",
     "cron_bit",
+    "SCHEDULE_POLL_SECONDS",
 ]
+
+
+async def _sleep_until_wake(
+    stop: asyncio.Event,
+    wake: asyncio.Event,
+    timeout: float,
+) -> bool:
+    """
+    Sleep up to timeout, or until stop/wake. Returns True if stop was set.
+    """
+    wake.clear()
+    if stop.is_set():
+        return True
+    stop_task = asyncio.create_task(stop.wait())
+    wake_task = asyncio.create_task(wake.wait())
+    try:
+        done, pending = await asyncio.wait(
+            {stop_task, wake_task},
+            timeout=max(0.05, timeout),
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+    finally:
+        if not stop_task.done():
+            stop_task.cancel()
+        if not wake_task.done():
+            wake_task.cancel()
+    return stop.is_set()
 
 
 def next_run_at(hour: int, minute: int, tz: ZoneInfo, *, now: datetime | None = None) -> datetime:
@@ -265,16 +301,21 @@ def generate_scheduled_report(
 
 
 class ReportScheduler:
-    """Async loop sleeping until next local fire time."""
+    """Async loop: poll schedule often, fire at next local time."""
 
     def __init__(self, uow: UnitOfWork, settings: Settings) -> None:
         self.uow = uow
         self.settings = settings
         self._task: asyncio.Task[None] | None = None
         self._stop = asyncio.Event()
+        self._wake = asyncio.Event()
         self.last_run_at: float | None = None
         self.last_error: str | None = None
         self.next_run_iso: str | None = None
+
+    def nudge(self) -> None:
+        """Wake the sleep loop so schedule changes apply immediately."""
+        self._wake.set()
 
     def status(self) -> dict[str, Any]:
         sched = self.settings.parse_report_schedule()
@@ -283,12 +324,19 @@ class ReportScheduler:
             last = self.uow.report_files.last_scheduled()
         except Exception:
             last = None
+        next_iso = None
+        if sched.get("enabled"):
+            tz = resolve_tz(sched["timezone"])
+            next_iso = next_run_at(sched["hour"], sched["minute"], tz).isoformat()
+            self.next_run_iso = next_iso
+        else:
+            self.next_run_iso = None
         return {
             **sched,
             "running": bool(self._task and not self._task.done()),
             "last_run_at": self.last_run_at,
             "last_error": self.last_error,
-            "next_run_iso": self.next_run_iso,
+            "next_run_iso": next_iso,
             "last_file": last,
         }
 
@@ -296,10 +344,12 @@ class ReportScheduler:
         if self._task and not self._task.done():
             return
         self._stop.clear()
+        self._wake.clear()
         self._task = asyncio.create_task(self._loop(), name="report-scheduler")
 
     async def stop(self) -> None:
         self._stop.set()
+        self._wake.set()
         if self._task:
             self._task.cancel()
             try:
@@ -309,55 +359,75 @@ class ReportScheduler:
             self._task = None
 
     async def _loop(self) -> None:
+        target: datetime | None = None
+        target_key: tuple[Any, ...] | None = None
         while not self._stop.is_set():
             sched = self.settings.parse_report_schedule()
             if not sched["enabled"]:
                 self.next_run_iso = None
-                try:
-                    await asyncio.wait_for(self._stop.wait(), timeout=60.0)
-                except TimeoutError:
-                    continue
-                break
+                target = None
+                target_key = None
+                if await _sleep_until_wake(self._stop, self._wake, 60.0):
+                    break
+                continue
 
             tz = resolve_tz(sched["timezone"])
-            nxt = next_run_at(sched["hour"], sched["minute"], tz)
-            self.next_run_iso = nxt.isoformat()
-            delay = max(1.0, (nxt - datetime.now(tz)).total_seconds())
-            log.info("Report scheduler: next run at %s (sleep %.0fs)", self.next_run_iso, delay)
-            try:
-                await asyncio.wait_for(self._stop.wait(), timeout=delay)
-                break
-            except TimeoutError:
-                pass
+            key = (
+                int(sched["hour"]),
+                int(sched["minute"]),
+                sched["timezone"],
+                sched.get("kind"),
+                sched.get("profile"),
+            )
+            now = datetime.now(tz)
+            nxt = next_run_at(sched["hour"], sched["minute"], tz, now=now)
+            if target is None or key != target_key:
+                if target is not None and key != target_key:
+                    log.info(
+                        "Report schedule changed: next_run %s → %s",
+                        target.isoformat(),
+                        nxt.isoformat(),
+                    )
+                target = nxt
+                target_key = key
+                log.info(
+                    "Report scheduler: next run at %s",
+                    target.isoformat(),
+                )
 
-            if self._stop.is_set():
-                break
-            try:
-                result = await asyncio.to_thread(
-                    generate_scheduled_report,
-                    self.uow,
-                    self.settings,
-                    kind=sched["kind"],
-                    profile=sched["profile"],
-                    scheduled=True,
-                )
-                self.last_run_at = time.time()
-                self.last_error = None
-                log.info("Scheduled report written: %s", result.get("path"))
-            except Exception as e:
-                self.last_error = str(e)
-                log.exception("Scheduled report failed: %s", e)
-                self.uow.journal.log(
-                    sched["profile"],
-                    "report_schedule_error",
-                    str(e),
-                    level="error",
-                )
-                # avoid tight retry loop
+            self.next_run_iso = target.isoformat()
+            delay = (target - datetime.now(tz)).total_seconds()
+            if delay <= 0:
                 try:
-                    await asyncio.wait_for(self._stop.wait(), timeout=120.0)
-                except TimeoutError:
-                    pass
+                    result = await asyncio.to_thread(
+                        generate_scheduled_report,
+                        self.uow,
+                        self.settings,
+                        kind=sched["kind"],
+                        profile=sched["profile"],
+                        scheduled=True,
+                    )
+                    self.last_run_at = time.time()
+                    self.last_error = None
+                    log.info("Scheduled report written: %s", result.get("path"))
+                except Exception as e:
+                    self.last_error = str(e)
+                    log.exception("Scheduled report failed: %s", e)
+                    self.uow.journal.log(
+                        sched["profile"],
+                        "report_schedule_error",
+                        str(e),
+                        level="error",
+                    )
+                    if await _sleep_until_wake(self._stop, self._wake, 120.0):
+                        break
+                target = None
+                target_key = None
+                continue
+
+            chunk = min(SCHEDULE_POLL_SECONDS, max(0.5, delay))
+            if await _sleep_until_wake(self._stop, self._wake, chunk):
+                break
 
 
 class ParseScheduler:
@@ -365,7 +435,8 @@ class ParseScheduler:
     Async loop for vacancy jobs at launch.schedule times (env kill-switch).
 
     Bitmask cron_job_rules: HH search, HH apply, LI vacancies, LI network.
-    Same in-process constraint as ReportScheduler.
+    Re-reads launch.json every ≤ SCHEDULE_POLL_SECONDS so Criteria edits
+    reschedule without process restart.
     """
 
     def __init__(self, uow: UnitOfWork, settings: Settings, runner: Any) -> None:
@@ -374,19 +445,31 @@ class ParseScheduler:
         self.runner = runner
         self._task: asyncio.Task[None] | None = None
         self._stop = asyncio.Event()
+        self._wake = asyncio.Event()
         self.last_run_at: float | None = None
         self.last_error: str | None = None
         self.next_run_iso: str | None = None
         self.last_result: dict[str, Any] | None = None
 
+    def nudge(self) -> None:
+        """Wake the sleep loop so launch.schedule edits apply immediately."""
+        self._wake.set()
+
     def status(self) -> dict[str, Any]:
         sched = resolve_effective_parse_schedule(self.settings)
+        next_iso = None
+        if sched.get("enabled"):
+            tz = resolve_tz(sched["timezone"])
+            next_iso = next_run_at_times(list(sched["times"]), tz).isoformat()
+            self.next_run_iso = next_iso
+        else:
+            self.next_run_iso = None
         return {
             **sched,
             "running": bool(self._task and not self._task.done()),
             "last_run_at": self.last_run_at,
             "last_error": self.last_error,
-            "next_run_iso": self.next_run_iso,
+            "next_run_iso": next_iso,
             "last_result": self.last_result,
         }
 
@@ -394,10 +477,12 @@ class ParseScheduler:
         if self._task and not self._task.done():
             return
         self._stop.clear()
+        self._wake.clear()
         self._task = asyncio.create_task(self._loop(), name="parse-scheduler")
 
     async def stop(self) -> None:
         self._stop.set()
+        self._wake.set()
         if self._task:
             self._task.cancel()
             try:
@@ -407,76 +492,98 @@ class ParseScheduler:
             self._task = None
 
     async def _loop(self) -> None:
+        target: datetime | None = None
+        target_key: tuple[Any, ...] | None = None
         while not self._stop.is_set():
-            # Env kill-switch: do not keep looping if process-level flag is off.
+            # Env kill-switch: process was started with flag off → idle until stop.
             if not self.settings.parse_schedule_enabled:
                 self.next_run_iso = None
-                try:
-                    await asyncio.wait_for(self._stop.wait(), timeout=60.0)
-                except TimeoutError:
-                    continue
-                break
+                target = None
+                target_key = None
+                if await _sleep_until_wake(self._stop, self._wake, 60.0):
+                    break
+                continue
 
             sched = resolve_effective_parse_schedule(self.settings)
             if not sched["enabled"]:
                 self.next_run_iso = None
-                try:
-                    await asyncio.wait_for(self._stop.wait(), timeout=60.0)
-                except TimeoutError:
-                    continue
+                target = None
+                target_key = None
+                if await _sleep_until_wake(
+                    self._stop, self._wake, SCHEDULE_POLL_SECONDS
+                ):
+                    break
                 continue
 
             tz = resolve_tz(sched["timezone"])
-            nxt = next_run_at_times(list(sched["times"]), tz)
-            self.next_run_iso = nxt.isoformat()
-            delay = max(1.0, (nxt - datetime.now(tz)).total_seconds())
-            log.info(
-                "Parse scheduler: next run at %s rules=%s (sleep %.0fs)",
-                self.next_run_iso,
+            times = list(sched["times"])
+            key = (
+                tuple(times),
+                sched["timezone"],
                 sched.get("cron_job_rules"),
-                delay,
+                bool(sched.get("email_report_after_run")),
             )
-            try:
-                await asyncio.wait_for(self._stop.wait(), timeout=delay)
-                break
-            except TimeoutError:
-                pass
-
-            if self._stop.is_set():
-                break
-            # Re-resolve so UI-saved launch.schedule applies without redeploy.
-            sched = resolve_effective_parse_schedule(self.settings)
-            if not sched["enabled"]:
-                continue
-            try:
-                result = await self._fire(sched)
-                self.last_run_at = time.time()
-                self.last_error = None
-                self.last_result = result
-                log.info("Scheduled parse done: %s", result)
-            except Exception as e:
-                self.last_error = str(e)
-                log.exception("Scheduled parse failed: %s", e)
-                self.uow.journal.log(
-                    sched["profile"],
-                    "parse_schedule_error",
-                    str(e),
-                    level="error",
-                )
-                try:
-                    from app.application.alerts import get_alert_service
-
-                    get_alert_service(self.settings).notify_error(
-                        sched["profile"],
-                        str(e),
-                        event="parse_schedule_error",
+            now = datetime.now(tz)
+            nxt = next_run_at_times(times, tz, now=now)
+            if target is None or key != target_key:
+                if target is not None and key != target_key:
+                    log.info(
+                        "Parse schedule changed: next_run %s → %s rules=%s",
+                        target.isoformat(),
+                        nxt.isoformat(),
+                        sched.get("cron_job_rules"),
                     )
-                except Exception:
-                    pass
+                target = nxt
+                target_key = key
+                log.info(
+                    "Parse scheduler: next run at %s rules=%s",
+                    target.isoformat(),
+                    sched.get("cron_job_rules"),
+                )
+
+            self.next_run_iso = target.isoformat()
+            delay = (target - datetime.now(tz)).total_seconds()
+            if delay <= 0:
+                # Re-resolve so UI-saved launch.schedule applies at fire time.
+                sched = resolve_effective_parse_schedule(self.settings)
+                if not sched["enabled"]:
+                    target = None
+                    target_key = None
+                    continue
                 try:
-                    await asyncio.wait_for(self._stop.wait(), timeout=120.0)
-                except TimeoutError:
-                    pass
+                    result = await self._fire(sched)
+                    self.last_run_at = time.time()
+                    self.last_error = None
+                    self.last_result = result
+                    log.info("Scheduled parse done: %s", result)
+                except Exception as e:
+                    self.last_error = str(e)
+                    log.exception("Scheduled parse failed: %s", e)
+                    self.uow.journal.log(
+                        sched["profile"],
+                        "parse_schedule_error",
+                        str(e),
+                        level="error",
+                    )
+                    try:
+                        from app.application.alerts import get_alert_service
+
+                        get_alert_service(self.settings).notify_error(
+                            sched["profile"],
+                            str(e),
+                            event="parse_schedule_error",
+                        )
+                    except Exception:
+                        pass
+                    if await _sleep_until_wake(self._stop, self._wake, 120.0):
+                        break
+                target = None
+                target_key = None
+                continue
+
+            chunk = min(SCHEDULE_POLL_SECONDS, max(0.5, delay))
+            if await _sleep_until_wake(self._stop, self._wake, chunk):
+                break
 
     async def _wait_idle(
         self,

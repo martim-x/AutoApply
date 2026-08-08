@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from app.domain.launch_profile import (
     HH_DEFAULT_QUERIES,
@@ -16,7 +18,9 @@ from app.infrastructure.scheduler import (
     BIT_HH_SEARCH,
     BIT_LI_NETWORK,
     BIT_LI_VACANCIES,
+    ParseScheduler,
     cron_bit,
+    next_run_at_times,
     resolve_effective_parse_schedule,
 )
 from app.infrastructure.settings import Settings
@@ -148,3 +152,81 @@ def test_effective_schedule_kill_switch(tmp_path: Path):
     sched2 = resolve_effective_parse_schedule(s2)
     assert sched2["enabled"] is True
     assert sched2["times_display"] == "00:00,12:00"
+
+
+def test_next_run_at_times_picks_soonest():
+    tz = resolve_tz("Europe/Minsk")
+    now = datetime(2026, 8, 8, 19, 0, tzinfo=tz)
+    nxt = next_run_at_times([(12, 0), (19, 32)], tz, now=now)
+    assert nxt.hour == 19 and nxt.minute == 32 and nxt.day == 8
+    later = next_run_at_times([(12, 0), (19, 32)], tz, now=datetime(2026, 8, 8, 19, 33, tzinfo=tz))
+    assert later.hour == 12 and later.day == 9
+
+
+def test_effective_schedule_times_change_updates_next_run(tmp_path: Path):
+    """Saving new HH:MM in launch.json must change resolved next_run without restart."""
+    path = tmp_path / "launch.json"
+    base = {
+        "site": "rabota.by",
+        "location": {"country": "Беларусь", "city": "Минск"},
+        "queries": ["Python developer"],
+        "schedule": {
+            "enabled": True,
+            "timezone": "Europe/Minsk",
+            "times": ["00:00", "12:00"],
+            "cron_job_rules": "1111",
+            "email_report_after_run": True,
+        },
+    }
+    path.write_text(json.dumps(base), encoding="utf-8")
+    s = Settings(_env_file=None, launch_path=path, parse_schedule_enabled=True)
+    tz = resolve_tz("Europe/Minsk")
+    now = datetime(2026, 8, 8, 19, 0, tzinfo=tz)
+
+    before = resolve_effective_parse_schedule(s)
+    nxt_before = next_run_at_times(list(before["times"]), tz, now=now)
+    assert nxt_before.hour == 0  # midnight next day
+
+    base["schedule"]["times"] = ["19:32"]
+    path.write_text(json.dumps(base), encoding="utf-8")
+    after = resolve_effective_parse_schedule(s)
+    assert after["times_display"] == "19:32"
+    nxt_after = next_run_at_times(list(after["times"]), tz, now=now)
+    assert nxt_after.hour == 19 and nxt_after.minute == 32 and nxt_after.day == 8
+    assert nxt_after != nxt_before
+
+
+def test_parse_scheduler_status_reflects_saved_times(tmp_path: Path):
+    path = tmp_path / "launch.json"
+    path.write_text(
+        json.dumps(
+            {
+                "site": "rabota.by",
+                "location": {"country": "Беларусь", "city": "Минск"},
+                "queries": ["Python developer"],
+                "schedule": {
+                    "enabled": True,
+                    "timezone": "Europe/Minsk",
+                    "times": ["19:32"],
+                    "cron_job_rules": "1010",
+                    "email_report_after_run": False,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    s = Settings(_env_file=None, launch_path=path, parse_schedule_enabled=True)
+    sched = ParseScheduler(MagicMock(), s, MagicMock())
+    st = sched.status()
+    assert st["enabled"] is True
+    assert st["times_display"] == "19:32"
+    assert st["next_run_iso"]
+    assert "19:32" in st["next_run_iso"] or "+03:00" in st["next_run_iso"]
+
+
+def test_parse_scheduler_nudge_sets_wake():
+    s = Settings(_env_file=None, parse_schedule_enabled=True)
+    sched = ParseScheduler(MagicMock(), s, MagicMock())
+    assert not sched._wake.is_set()
+    sched.nudge()
+    assert sched._wake.is_set()
