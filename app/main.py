@@ -86,7 +86,12 @@ def create_app() -> FastAPI:
 
     @app.get("/favicon.ico", include_in_schema=False)
     def favicon() -> FileResponse:
-        return FileResponse(favicon_ico, media_type="image/x-icon")
+        # Short cache + revalidate so browsers drop a stale letter-monogram fallback.
+        return FileResponse(
+            favicon_ico,
+            media_type="image/x-icon",
+            headers={"Cache-Control": "public, max-age=3600, must-revalidate"},
+        )
 
     app.mount("/static", StaticFiles(directory=str(WEB_DIR / "static")), name="static")
 
