@@ -347,6 +347,7 @@
       dialogForm.querySelector('[value="save"]').setAttribute("data-i18n", "admin.env.dialog.save");
     }
     applyI18n(dialog);
+    if (window.AA_BODY_SCROLL) window.AA_BODY_SCROLL.lock("admin-var-dialog");
     if (typeof dialog.showModal === "function") dialog.showModal();
     else dialog.setAttribute("open", "");
     keyInput.focus();
@@ -357,6 +358,13 @@
     dialogMode = null;
     if (typeof dialog.close === "function") dialog.close();
     else dialog.removeAttribute("open");
+    if (window.AA_BODY_SCROLL) window.AA_BODY_SCROLL.unlock("admin-var-dialog");
+  }
+
+  if (dialog) {
+    dialog.addEventListener("close", () => {
+      if (window.AA_BODY_SCROLL) window.AA_BODY_SCROLL.unlock("admin-var-dialog");
+    });
   }
 
   function initTheme() {

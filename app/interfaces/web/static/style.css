@@ -988,6 +988,13 @@ a:hover { text-decoration: underline; }
   word-break: break-word;
 }
 
+/* Lock page scroll while any overlay/dialog holds AA_BODY_SCROLL */
+html.modal-open,
+html.modal-open body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 /* Launch criteria modal — above panel fullscreen expand */
 .launch-modal,
 .explain-modal {
@@ -999,6 +1006,7 @@ a:hover { text-decoration: underline; }
   align-items: flex-end;
   justify-content: center;
   padding: 0;
+  overscroll-behavior: contain;
 }
 .launch-modal[hidden],
 .explain-modal[hidden] { display: none; }
@@ -1008,6 +1016,7 @@ a:hover { text-decoration: underline; }
   max-height: min(88vh, 640px);
   overflow: auto;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   background: var(--panel);
   border-radius: 16px 16px 0 0;
   border: 1px solid var(--line);
@@ -1261,6 +1270,7 @@ a:hover { text-decoration: underline; }
   top: var(--remote-vv-top, 0px);
   height: var(--remote-vv-height, 100dvh);
   box-sizing: border-box;
+  overscroll-behavior: contain;
 }
 .remote-modal[hidden] { display: none; }
 .remote-panel {
@@ -1896,6 +1906,7 @@ a:hover { text-decoration: underline; }
   background: var(--panel);
   color: var(--text);
   box-shadow: var(--shadow);
+  overscroll-behavior: contain;
 }
 .admin-var-dialog::backdrop {
   background: var(--overlay);

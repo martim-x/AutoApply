@@ -15,7 +15,17 @@
   const btnRemoteKeyboard = $("btnRemoteKeyboard");
   const explainModal = $("explainModal");
   const launchModal = $("launchModal");
+  const liLaunchModal = $("liLaunchModal");
   const ctx = remoteCanvas.getContext("2d");
+
+  if (window.AA_BODY_SCROLL) {
+    window.AA_BODY_SCROLL.watchModals([
+      launchModal,
+      liLaunchModal,
+      explainModal,
+      remoteModal,
+    ]);
+  }
 
   let remoteEnabled = false;
   let remoteRunning = false;
@@ -1582,13 +1592,13 @@
       } catch (e) {
         setLiLaunchMessage(String(e.message || e), false);
       }
-      $("liLaunchModal").hidden = false;
+      if (liLaunchModal) liLaunchModal.hidden = false;
     };
   }
 
   if ($("btnLiLaunchClose")) {
     $("btnLiLaunchClose").onclick = () => {
-      $("liLaunchModal").hidden = true;
+      if (liLaunchModal) liLaunchModal.hidden = true;
     };
   }
   if ($("btnLiLaunchValidate")) {
@@ -1624,7 +1634,7 @@
         }
         updateLiLaunch(r.launch || launch);
         setLiLaunchMessage(t("launch.saved", { path: r.path }), true);
-        $("liLaunchModal").hidden = true;
+        if (liLaunchModal) liLaunchModal.hidden = true;
         await refreshAll();
       } catch (e) {
         setLiLaunchMessage(String(e.message || e), false);
@@ -2220,7 +2230,7 @@
       if (e.key !== "Escape" || !logFullscreenId) return;
       if (remoteModal && !remoteModal.hidden) return;
       if (launchModal && !launchModal.hidden) return;
-      if ($("liLaunchModal") && !$("liLaunchModal").hidden) return;
+      if (liLaunchModal && !liLaunchModal.hidden) return;
       if (explainModal && !explainModal.hidden) return;
       setLogFullscreen(logFullscreenId, false);
     });
