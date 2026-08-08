@@ -894,6 +894,11 @@ th, td {
   border-bottom: 1px solid var(--line);
   vertical-align: top;
 }
+#vacBody td,
+#liVacBody td,
+#liContactBody td {
+  vertical-align: middle;
+}
 th { color: var(--muted); font-weight: 500; }
 .cat-HIGH { color: var(--high); font-weight: 700; }
 .cat-MEDIUM { color: var(--medium); font-weight: 700; }
