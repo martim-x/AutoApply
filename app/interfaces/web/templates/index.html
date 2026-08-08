@@ -104,6 +104,9 @@
     <symbol id="i-arrow-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
       <path d="M12 19V5M5 12l7-7 7 7"/>
     </symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 9l6 6 6-6"/>
+    </symbol>
   </svg>
 
   <div class="shell" data-workspace="hh">
@@ -459,7 +462,10 @@
       <p class="launch-desc" data-i18n="launch.label">Параметры запуска (строгий формат → launch.json на DATA_DIR)</p>
       <textarea id="launchText" class="launch-text" rows="12" spellcheck="false" data-i18n="launch.aria" data-i18n-attr="aria-label"></textarea>
       <details class="launch-schedule" id="launchTargetsBox" open>
-        <summary data-i18n="launch.targets.title">Страны / сайты</summary>
+        <summary>
+          <span data-i18n="launch.targets.title">Страны / сайты</span>
+          <svg class="ico launch-sched-chevron" aria-hidden="true"><use href="#i-chevron-down"/></svg>
+        </summary>
         <p class="launch-desc" data-i18n="launch.targets.hint">Несколько целей → последовательный поиск; общий vacancy_limit. strict=false — вся страна цели.</p>
         <div id="launchTargetsList" class="launch-targets-list"></div>
         <button type="button" id="btnAddTarget" class="ghost touch">
@@ -468,7 +474,10 @@
         </button>
       </details>
       <details class="launch-schedule" id="launchScheduleBox">
-        <summary data-i18n="launch.schedule.title">Расписание cron</summary>
+        <summary>
+          <span data-i18n="launch.schedule.title">Расписание cron</span>
+          <svg class="ico launch-sched-chevron" aria-hidden="true"><use href="#i-chevron-down"/></svg>
+        </summary>
         <p class="launch-desc" data-i18n="launch.schedule.hint">Сохраняется в launch.json · PARSE_SCHEDULE_ENABLED — kill-switch в env</p>
         <label class="launch-sched-row">
           <input type="checkbox" id="schedEnabled" checked />

@@ -1067,10 +1067,27 @@ a:hover { text-decoration: underline; }
   cursor: pointer;
   font-weight: 600;
   font-size: var(--font-ui);
-  list-style: disclosure-closed;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+}
+.launch-schedule > summary::-webkit-details-marker { display: none; }
+.launch-schedule > summary::marker { content: ""; }
+.launch-schedule > summary .launch-sched-chevron {
+  width: 1rem;
+  height: 1rem;
+  color: var(--muted);
+  flex-shrink: 0;
+  transform: rotate(90deg);
+  transition: transform 0.15s ease;
 }
 .launch-schedule[open] > summary {
   margin-bottom: var(--space-2);
+}
+.launch-schedule[open] > summary .launch-sched-chevron {
+  transform: rotate(0deg);
 }
 .launch-sched-row {
   display: flex;
@@ -1112,7 +1129,7 @@ a:hover { text-decoration: underline; }
   min-width: 0;
 }
 .launch-sched-bit-ord {
-  color: var(--muted);
+  color: #8f9a90;
   font-size: var(--font-tiny);
   font-family: var(--mono);
   letter-spacing: 0.02em;
@@ -1133,13 +1150,16 @@ a:hover { text-decoration: underline; }
   margin: var(--space-2) 0;
 }
 .launch-target-row {
-  display: grid;
-  grid-template-columns: minmax(7rem, 1.1fr) minmax(7rem, 1fr) minmax(7rem, 1fr) auto auto;
-  gap: var(--space-2);
+  display: flex;
+  justify-content: space-between;
   align-items: center;
+  gap: var(--space-2);
+  width: 100%;
   font-size: var(--font-ui);
 }
 .launch-target-row select {
+  flex: 1 1 0;
+  min-width: 0;
   min-height: var(--touch);
   padding: 0.35rem 0.5rem;
   border: 1px solid var(--line);
@@ -1152,8 +1172,12 @@ a:hover { text-decoration: underline; }
   display: flex;
   align-items: center;
   gap: 0.35rem;
+  flex: 0 0 auto;
   white-space: nowrap;
   font-size: var(--font-ui);
+}
+.launch-target-row .btn-remove-target {
+  flex: 0 0 auto;
 }
 #btnAddTarget {
   margin-top: var(--space-1);
@@ -1163,11 +1187,13 @@ a:hover { text-decoration: underline; }
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .launch-target-row {
-    grid-template-columns: 1fr 1fr;
+    flex-wrap: wrap;
   }
-  .launch-target-row .launch-target-strict,
-  .launch-target-row .btn-remove-target {
-    grid-column: span 1;
+  .launch-target-row select {
+    flex: 1 1 calc(50% - var(--space-2));
+  }
+  .launch-target-row .launch-target-strict {
+    margin-right: auto;
   }
 }
 .launch-actions {
