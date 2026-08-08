@@ -74,18 +74,21 @@ salary_strict: false
 level: middle+
 ```
 
-Под полем — краткая meta: site · город · area · level · вилка · число queries.
+Под полем — секция **Страны / сайты** (несколько целей) и meta: `site/город + …` · вилка · queries · лимиты.
 
-**Поиск по всей стране:** `strict: false` — SERP на `country_area_id` (Беларусь → `16`), а не только город.  
-`city` остаётся в тексте (каталог/scoring). Несколько городов в одном launch — пока нет.
+**Несколько стран:** добавьте цели в UI или DSL `targets: rabota.by/Беларусь/Минск, hh.ru/Россия/Москва/false`.  
+Общие queries и `vacancy_limit`; поиск по targets по очереди.
+
+**Поиск по всей стране:** `strict: false` у цели — SERP на `country_area_id` (Беларусь → `16`, Россия → `113`).  
+`city` остаётся для каталога/scoring.
 
 **Частые ошибки валидации**
 
-- `site=rabota.by`, а `country=Россия` → не пройдёт  
+- `site=rabota.by`, а `country=Россия` → не пройдёт (и то же для каждой цели в `targets`)  
 - город не из каталога → список допустимых в ошибке  
 - `salary_min_usd` > `salary_max_usd` → не пройдёт  
 
-Для hh.ru:
+Для hh.ru (одна цель или вторая в списке):
 
 ```text
 site: hh.ru
@@ -93,6 +96,13 @@ country: Россия
 city: Москва
 queries: python developer
 …
+```
+
+Или вместе с Беларусью:
+
+```text
+targets: rabota.by/Беларусь/Минск/true, hh.ru/Россия/Москва/false
+queries: python developer
 ```
 
 ---

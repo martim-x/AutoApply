@@ -18,6 +18,12 @@ EXAMPLE_LAUNCH_PATH = ROOT / "config" / "launch.example.json"
 
 SiteName = Literal["rabota.by", "hh.ru"]
 
+# Site ↔ country binding (HH family). Extend when adding sites to areas.json.
+SITE_COUNTRY: dict[str, str] = {
+    "rabota.by": "Беларусь",
+    "hh.ru": "Россия",
+}
+
 HH_DEFAULT_QUERIES: list[str] = [
     "Python разработчик",
     "Python разработчик backend",
@@ -60,8 +66,6 @@ HH_LAUNCH_DEFAULTS: dict[str, Any] = {
         "cron_job_rules": "1111",
         "email_report_after_run": True,
     },
-    # Future multi-country: list of {site, location, queries?} — not implemented yet.
-    # "targets": [],
 }
 
 # Strict text format for humans (parsed → JSON):
@@ -69,6 +73,7 @@ HH_LAUNCH_DEFAULTS: dict[str, Any] = {
 # country: Беларусь
 # city: Минск
 # strict: true
+# targets: rabota.by/Беларусь/Минск/true, hh.ru/Россия/Москва/true
 # queries: python-разработчик, python-developer
 # remote_or_hybrid: true
 # skip_gov: true
@@ -91,6 +96,7 @@ STRICT_TEXT_KEYS = {
     "country",
     "city",
     "strict",
+    "targets",
     "queries",
     "remote_or_hybrid",
     "skip_gov",
@@ -119,6 +125,41 @@ class LocationPref(BaseModel):
     country_area_id: str | None = None
     city_aliases: list[str] = Field(default_factory=list)
     country_aliases: list[str] = Field(default_factory=list)
+
+
+class SearchTarget(BaseModel):
+    """One SERP target: site + location (country-wide when strict=false)."""
+
+    site: SiteName
+    location: LocationPref
+
+    @model_validator(mode="after")
+    def _resolve_and_bind(self) -> SearchTarget:
+        resolved = resolve_location(self.location.country, self.location.city)
+        self.location.area_id = resolved["area_id"]
+        self.location.country_area_id = resolved["country_area_id"]
+        self.location.city_aliases = resolved["city_aliases"]
+        self.location.country_aliases = resolved["country_aliases"]
+        self.location.country = resolved["country"]
+        self.location.city = resolved["city"]
+        expected = SITE_COUNTRY.get(self.site)
+        if expected and resolved["country"] != expected:
+            raise ValueError(
+                f"Для site={self.site} локация должна быть в стране {expected!r} "
+                f"(сейчас country={resolved['country']!r})"
+            )
+        return self
+
+    @property
+    def base_url(self) -> str:
+        return site_base_url(self.site)
+
+    @property
+    def search_area(self) -> str:
+        # strict city → city area; else country-wide for this target
+        if self.location.strict and self.location.area_id:
+            return self.location.area_id
+        return self.location.country_area_id or self.location.area_id or ""
 
 
 class SchedulePref(BaseModel):
@@ -196,6 +237,9 @@ class LaunchProfile(BaseModel):
 
     site: SiteName
     location: LocationPref
+    # Multi-country: sequential SERP per target; shared queries/filters/vacancy_limit.
+    # Empty → synthesized from site+location. Primary site/location mirror targets[0].
+    targets: list[SearchTarget] = Field(default_factory=list)
     queries: list[str] = Field(min_length=1)
     require_remote_or_hybrid: bool = True
     skip_gov: bool = True
@@ -211,6 +255,67 @@ class LaunchProfile(BaseModel):
     salary_strict: bool = False  # true → filter out clearly below min
     level: str = Field(default="middle+")
     schedule: SchedulePref = Field(default_factory=SchedulePref)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_targets_input(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        raw = dict(data)
+        targets = raw.get("targets")
+        if isinstance(targets, str):
+            targets = parse_targets_text(targets, default_strict=True)
+            raw["targets"] = targets
+        if isinstance(targets, list) and targets:
+            first = targets[0]
+            if isinstance(first, SearchTarget):
+                if "site" not in raw:
+                    raw["site"] = first.site
+                if "location" not in raw:
+                    raw["location"] = first.location
+            elif isinstance(first, dict):
+                if "site" not in raw and first.get("site"):
+                    raw["site"] = first["site"]
+                if "location" not in raw and first.get("location"):
+                    raw["location"] = first["location"]
+                elif "location" not in raw and (
+                    "country" in first or "city" in first
+                ):
+                    raw["location"] = {
+                        "country": first.get("country", ""),
+                        "city": first.get("city", ""),
+                        "strict": first.get("strict", True),
+                    }
+                    raw["targets"] = [
+                        (
+                            t
+                            if not isinstance(t, dict)
+                            else {
+                                "site": t.get("site"),
+                                "location": t.get("location")
+                                or {
+                                    "country": t.get("country"),
+                                    "city": t.get("city"),
+                                    "strict": t.get("strict", True),
+                                },
+                            }
+                        )
+                        for t in targets
+                    ]
+        elif raw.get("site") and (
+            raw.get("location")
+            or raw.get("country")
+            or raw.get("city")
+        ):
+            loc = raw.get("location")
+            if not isinstance(loc, dict):
+                loc = {
+                    "country": raw.get("country", HH_LAUNCH_DEFAULTS["location"]["country"]),
+                    "city": raw.get("city", HH_LAUNCH_DEFAULTS["location"]["city"]),
+                    "strict": raw.get("strict", True),
+                }
+            raw["targets"] = [{"site": raw["site"], "location": loc}]
+        return raw
 
     @field_validator("queries", mode="before")
     @classmethod
@@ -252,24 +357,15 @@ class LaunchProfile(BaseModel):
         return aliases.get(s, s)
 
     @model_validator(mode="after")
-    def _resolve_location(self) -> LaunchProfile:
-        resolved = resolve_location(self.location.country, self.location.city)
-        self.location.area_id = resolved["area_id"]
-        self.location.country_area_id = resolved["country_area_id"]
-        self.location.city_aliases = resolved["city_aliases"]
-        self.location.country_aliases = resolved["country_aliases"]
-        self.location.country = resolved["country"]
-        self.location.city = resolved["city"]
-        if self.site == "rabota.by" and resolved["country"] != "Беларусь":
-            raise ValueError(
-                "Для site=rabota.by локация должна быть в Беларуси "
-                f"(сейчас country={resolved['country']!r})"
-            )
-        if self.site == "hh.ru" and resolved["country"] != "Россия":
-            raise ValueError(
-                "Для site=hh.ru локация должна быть в России "
-                f"(сейчас country={resolved['country']!r})"
-            )
+    def _sync_targets_and_primary(self) -> LaunchProfile:
+        if not self.targets:
+            self.targets = [
+                SearchTarget(site=self.site, location=self.location)
+            ]
+        # Primary mirrors first target (login / meta / backward compat).
+        primary = self.targets[0]
+        self.site = primary.site
+        self.location = primary.location
         if (
             self.salary_min_usd is not None
             and self.salary_max_usd is not None
@@ -284,10 +380,15 @@ class LaunchProfile(BaseModel):
 
     @property
     def search_area(self) -> str:
-        # strict city → city area; else country
+        # Primary target area (compat). Prefer iter_targets() in search loop.
         if self.location.strict and self.location.area_id:
             return self.location.area_id
         return self.location.country_area_id or self.location.area_id or ""
+
+    def iter_targets(self) -> list[SearchTarget]:
+        return list(self.targets) if self.targets else [
+            SearchTarget(site=self.site, location=self.location)
+        ]
 
     def to_public_dict(self) -> dict[str, Any]:
         return self.model_dump()
@@ -369,6 +470,68 @@ def parse_bool(raw: str) -> bool:
     raise ValueError(f"Ожидался bool, получено: {raw!r}")
 
 
+def parse_targets_text(
+    text: str,
+    *,
+    default_strict: bool = True,
+) -> list[dict[str, Any]]:
+    """
+    Parse targets DSL:
+      rabota.by/Беларусь/Минск, hh.ru/Россия/Москва/false
+    Separators between targets: comma or semicolon.
+    Parts: site/country/city[/strict]
+    """
+    out: list[dict[str, Any]] = []
+    chunks = re.split(r"[,;]+", text or "")
+    for i, chunk in enumerate(chunks, start=1):
+        token = chunk.strip()
+        if not token:
+            continue
+        parts = [p.strip() for p in token.split("/")]
+        if len(parts) < 3:
+            raise ValueError(
+                f"targets[{i}]: нужен формат site/country/city[/strict], получено {token!r}"
+            )
+        if len(parts) > 4:
+            raise ValueError(
+                f"targets[{i}]: слишком много частей в {token!r} "
+                "(ожидалось site/country/city[/strict])"
+            )
+        site = parts[0].casefold()
+        country, city = parts[1], parts[2]
+        strict = default_strict
+        if len(parts) == 4:
+            strict = parse_bool(parts[3])
+        if site not in SITE_COUNTRY:
+            known = ", ".join(SITE_COUNTRY)
+            raise ValueError(
+                f"targets[{i}]: неизвестный site {site!r}. Допустимо: {known}"
+            )
+        out.append(
+            {
+                "site": site,
+                "location": {
+                    "country": country,
+                    "city": city,
+                    "strict": strict,
+                },
+            }
+        )
+    if not out:
+        raise ValueError("targets: нужен хотя бы один site/country/city")
+    return out
+
+
+def targets_to_strict_text(targets: list[SearchTarget]) -> str:
+    parts: list[str] = []
+    for t in targets:
+        loc = t.location
+        parts.append(
+            f"{t.site}/{loc.country}/{loc.city}/{str(loc.strict).lower()}"
+        )
+    return ", ".join(parts)
+
+
 def parse_strict_text(text: str) -> dict[str, Any]:
     """
     Парсит строгий key: value формат в сырой dict (до LaunchProfile).
@@ -390,18 +553,52 @@ def parse_strict_text(text: str) -> dict[str, Any]:
             )
         raw[key] = val
 
-    required = ("site", "country", "city", "queries")
-    missing = [k for k in required if k not in raw]
-    if missing:
-        raise ValueError(f"Не хватает обязательных полей: {', '.join(missing)}")
+    default_strict = parse_bool(raw["strict"]) if "strict" in raw else True
+    targets_raw: list[dict[str, Any]] | None = None
+    if "targets" in raw:
+        targets_raw = parse_targets_text(
+            raw["targets"], default_strict=default_strict
+        )
 
-    payload: dict[str, Any] = {
-        "site": raw["site"].casefold(),
-        "location": {
+    has_primary = "site" in raw and "country" in raw and "city" in raw
+    if not targets_raw and not has_primary:
+        raise ValueError(
+            "Не хватает обязательных полей: либо site+country+city, либо targets; "
+            "и всегда queries"
+        )
+    if "queries" not in raw:
+        raise ValueError("Не хватает обязательных полей: queries")
+
+    if targets_raw:
+        primary = targets_raw[0]
+        site = str(primary["site"]).casefold()
+        location = dict(primary["location"])
+    else:
+        site = raw["site"].casefold()
+        location = {
             "country": raw["country"],
             "city": raw["city"],
-            "strict": parse_bool(raw["strict"]) if "strict" in raw else True,
-        },
+            "strict": default_strict,
+        }
+        targets_raw = [{"site": site, "location": location}]
+
+    # Classic site/country/city override primary when both present (explicit single fields).
+    if has_primary and "targets" not in raw:
+        site = raw["site"].casefold()
+        location = {
+            "country": raw["country"],
+            "city": raw["city"],
+            "strict": default_strict,
+        }
+        targets_raw = [{"site": site, "location": location}]
+    elif has_primary and "targets" in raw:
+        # Keep targets list; site/country/city in DSL are informational / first-target hints.
+        pass
+
+    payload: dict[str, Any] = {
+        "site": site,
+        "location": location,
+        "targets": targets_raw,
         "queries": raw["queries"],
         "require_remote_or_hybrid": (
             parse_bool(raw["remote_or_hybrid"])
@@ -459,29 +656,36 @@ def launch_to_strict_text(profile: LaunchProfile) -> str:
     sched = profile.schedule
     queries = ", ".join(profile.queries)
     times = ", ".join(sched.times)
+    targets = profile.iter_targets()
     lines = [
         f"site: {profile.site}",
         f"country: {loc.country}",
         f"city: {loc.city}",
         f"strict: {str(loc.strict).lower()}",
-        f"queries: {queries}",
-        f"remote_or_hybrid: {str(profile.require_remote_or_hybrid).lower()}",
-        f"skip_gov: {str(profile.skip_gov).lower()}",
-        f"python_keywords: {str(profile.require_python_keywords).lower()}",
-        f"vacancy_limit: {profile.vacancy_limit}",
-        f"apply_limit: {profile.apply_limit}",
-        f"dry_run: {str(profile.dry_run).lower()}",
-        f"salary_min_usd: {profile.salary_min_usd if profile.salary_min_usd is not None else ''}",
-        f"salary_max_usd: {profile.salary_max_usd if profile.salary_max_usd is not None else ''}",
-        f"salary_strict: {str(profile.salary_strict).lower()}",
-        f"level: {profile.level}",
-        f"schedule_enabled: {str(sched.enabled).lower()}",
-        f"schedule_timezone: {sched.timezone}",
-        f"schedule_times: {times}",
-        f"cron_job_rules: {sched.cron_job_rules}",
-        f"email_report_after_run: {str(sched.email_report_after_run).lower()}",
-        "",
     ]
+    if len(targets) > 1:
+        lines.append(f"targets: {targets_to_strict_text(targets)}")
+    lines.extend(
+        [
+            f"queries: {queries}",
+            f"remote_or_hybrid: {str(profile.require_remote_or_hybrid).lower()}",
+            f"skip_gov: {str(profile.skip_gov).lower()}",
+            f"python_keywords: {str(profile.require_python_keywords).lower()}",
+            f"vacancy_limit: {profile.vacancy_limit}",
+            f"apply_limit: {profile.apply_limit}",
+            f"dry_run: {str(profile.dry_run).lower()}",
+            f"salary_min_usd: {profile.salary_min_usd if profile.salary_min_usd is not None else ''}",
+            f"salary_max_usd: {profile.salary_max_usd if profile.salary_max_usd is not None else ''}",
+            f"salary_strict: {str(profile.salary_strict).lower()}",
+            f"level: {profile.level}",
+            f"schedule_enabled: {str(sched.enabled).lower()}",
+            f"schedule_timezone: {sched.timezone}",
+            f"schedule_times: {times}",
+            f"cron_job_rules: {sched.cron_job_rules}",
+            f"email_report_after_run: {str(sched.email_report_after_run).lower()}",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 

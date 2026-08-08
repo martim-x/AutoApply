@@ -49,9 +49,10 @@ interfaces  →  application  →  domain
 
 ## 4. Launch-профиль как единый источник прогона
 
-**Решение:** `config/launch.json` (+ строгий text DSL в UI) перекрывает `.env` для site / area / queries / фильтров / вилки / level.
+**Решение:** `config/launch.json` (+ строгий text DSL / секция targets в UI) перекрывает `.env` для site / area / queries / фильтров / вилки / level.
 
-**Почему:** один артефакт «как ищу сегодня», валидируемый (`site`↔`country`, город из каталога).
+**Почему:** один артефакт «как ищу сегодня», валидируемый (`site`↔`country`, город из каталога).  
+`targets[]` — несколько SERP-целей; gateway обходит их последовательно с общим `vacancy_limit`.
 
 **Парсинг:** `app/domain/launch_profile.py`  
 **Каталог area:** `config/areas.json`  

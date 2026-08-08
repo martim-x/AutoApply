@@ -1104,6 +1104,46 @@ a:hover { text-decoration: underline; }
   padding: 0 var(--space-1);
   font-weight: 600;
 }
+.launch-targets-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+.launch-target-row {
+  display: grid;
+  grid-template-columns: minmax(7rem, 1.1fr) minmax(7rem, 1fr) minmax(7rem, 1fr) auto auto;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: var(--font-ui);
+}
+.launch-target-row select {
+  min-height: var(--touch);
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text);
+  font: inherit;
+}
+.launch-target-row .launch-target-strict {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+  font-size: var(--font-ui);
+}
+#btnAddTarget {
+  margin-top: var(--space-1);
+}
+@media (max-width: 640px) {
+  .launch-target-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .launch-target-row .launch-target-strict,
+  .launch-target-row .btn-remove-target {
+    grid-column: span 1;
+  }
+}
 .launch-actions {
   display: grid;
   margin-top: var(--space-3);

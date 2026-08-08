@@ -361,10 +361,12 @@ site: rabota.by
 country: Беларусь
 city: Минск
 strict: true
+targets: rabota.by/Беларусь/Минск/true, hh.ru/Россия/Москва/false
 queries: python-разработчик, python-developer
 remote_or_hybrid: true
 skip_gov: true
 python_keywords: true
+vacancy_limit: 30
 apply_limit: 30
 dry_run: false
 salary_min_usd: 2200
@@ -375,10 +377,10 @@ level: middle+
 
 | Поле | Смысл |
 |------|--------|
-| `site` | `rabota.by` или `hh.ru` (страна должна совпасть с каталогом) |
-| `country` / `city` | Строго из `config/areas.json` → параметр `area=` |
-| `strict` | `true` — город + фильтр чужого города; `false` — **вся страна** (Беларусь `area=16`) |
-| `queries` | Поисковые строки SERP |
+| `site` / `country` / `city` | Первичная цель (= `targets[0]`); `rabota.by`↔Беларусь, `hh.ru`↔Россия |
+| `targets` | Несколько `site/country/city[/strict]` — последовательный поиск, общий `vacancy_limit` |
+| `strict` | `true` — город + фильтр чужого города; `false` — **вся страна цели** (BY `16`, RU `113`) |
+| `queries` | Поисковые строки SERP (общие для всех targets) |
 | `remote_or_hybrid` | Обязательный remote или hybrid |
 | `skip_gov` | Резать gov-маркеры и `*.gov.*` |
 | `python_keywords` | Нужен сигнал python / разработчик |
@@ -387,11 +389,11 @@ level: middle+
 | `salary_*` | Вилка Legend $2200-2800; `salary_strict` - жёсткий отсев ниже |
 | `level` | Целевой уровень для сигналов scoring |
 
-После правок в UI: **Проверить** → **Сохранить фильтры**.
+После правок в UI: **Проверить** → **Сохранить** (блок «Страны / сайты»).
 
-Поиск по всей стране: `strict: false` (+ `country: Беларусь` → SERP `area=16`). Несколько городов в одном launch — пока нет.
+Поиск по всей стране цели: `strict: false`. Казахстан / hh.kz — stub в `areas.json`, пока не подключено.
 
-Для hh.ru:
+Для одной цели на hh.ru:
 
 ```text
 site: hh.ru

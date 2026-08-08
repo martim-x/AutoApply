@@ -5,6 +5,24 @@
     "city": "Минск",
     "strict": true
   },
+  "targets": [
+    {
+      "site": "rabota.by",
+      "location": {
+        "country": "Беларусь",
+        "city": "Минск",
+        "strict": true
+      }
+    },
+    {
+      "site": "hh.ru",
+      "location": {
+        "country": "Россия",
+        "city": "Москва",
+        "strict": false
+      }
+    }
+  ],
   "queries": [
     "Python разработчик",
     "Python разработчик backend",

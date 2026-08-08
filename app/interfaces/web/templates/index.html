@@ -458,6 +458,15 @@
       </div>
       <p class="launch-desc" data-i18n="launch.label">Параметры запуска (строгий формат → launch.json на DATA_DIR)</p>
       <textarea id="launchText" class="launch-text" rows="12" spellcheck="false" data-i18n="launch.aria" data-i18n-attr="aria-label"></textarea>
+      <details class="launch-schedule" id="launchTargetsBox" open>
+        <summary data-i18n="launch.targets.title">Страны / сайты</summary>
+        <p class="launch-desc" data-i18n="launch.targets.hint">Несколько целей → последовательный поиск; общий vacancy_limit. strict=false — вся страна цели.</p>
+        <div id="launchTargetsList" class="launch-targets-list"></div>
+        <button type="button" id="btnAddTarget" class="ghost touch">
+          <svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>
+          <span class="btn-label" data-i18n="launch.targets.add">Добавить цель</span>
+        </button>
+      </details>
       <details class="launch-schedule" id="launchScheduleBox">
         <summary data-i18n="launch.schedule.title">Расписание cron</summary>
         <p class="launch-desc" data-i18n="launch.schedule.hint">Сохраняется в launch.json · PARSE_SCHEDULE_ENABLED — kill-switch в env</p>

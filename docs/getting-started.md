@@ -118,25 +118,43 @@ level: middle+
 
 | Поле | Смысл |
 |------|--------|
-| `site` | `rabota.by` или `hh.ru` (страна должна совпасть) |
-| `country` / `city` | строго из `config/areas.json` → HH `area=` |
-| `strict` | `true` — SERP по городу + резать другой город; `false` — **вся страна** (`area` = `country_area_id`, для Беларуси `16`) |
-| `queries` | поисковые строки SERP |
+| `site` / `country` / `city` | первичная цель (совпадает с `targets[0]`); `rabota.by`↔Беларусь, `hh.ru`↔Россия |
+| `targets` | опционально: несколько `site/country/city[/strict]` через запятую → последовательный SERP |
+| `strict` | `true` — SERP по городу + резать другой город; `false` — **вся страна этой цели** (`country_area_id`) |
+| `queries` | общие поисковые строки SERP для всех targets |
 | `remote_or_hybrid` | обязательный remote/hybrid |
 | `skip_gov` | резать `*.gov.*` и gov-маркеры |
 | `python_keywords` | нужен python/разработчик-сигнал |
-| `apply_limit` | сколько подходящих держать в очереди за прогон |
+| `vacancy_limit` | общий лимит подходящих за прогон (на все targets) |
+| `apply_limit` | сколько подходящих откликать за apply |
 | `dry_run` | не жать «Откликнуться», только пройти сценарий |
 | `salary_*` | вилка Legend $2200–2800; `salary_strict` — жёсткий отсев ниже |
 | `level` | целевой уровень для сигналов scoring |
 
 Пока нет `launch.json`, подхватывается example (или defaults из `.env`).
 
-После правок в UI: **Проверить** → **Сохранить фильтры**.
+После правок в UI: **Проверить** → **Сохранить** (секция «Страны / сайты» перекрывает targets при сохранении).
+
+### Несколько стран / сайтов
+
+```text
+site: rabota.by
+country: Беларусь
+city: Минск
+strict: true
+targets: rabota.by/Беларусь/Минск/true, hh.ru/Россия/Москва/false
+queries: python developer, Python разработчик
+vacancy_limit: 30
+```
+
+- Поиск: target₁ × queries, затем target₂ × queries, пока не набран `vacancy_limit`.
+- У hh.ru выше `strict: false` → SERP на всю Россию (`area=113`), не только Москву.
+- JSON: `targets: [{ "site", "location": { country, city, strict } }, …]` (см. `config/launch.example.json`).
+- **Казахстан / hh.kz** — пока stub в `areas.json` (`_notes.kazakhstan`); без area_ids не включаем.
 
 ### Поиск по всей стране
 
-Один launch уже может покрыть всю Беларусь (или всю Россию на hh.ru):
+Один target может покрыть всю Беларусь (или всю Россию на hh.ru):
 
 ```text
 site: rabota.by
@@ -147,7 +165,10 @@ strict: false
 
 - `strict: false` → в SERP уходит `area=16` (страна), а не area города.
 - `city` всё ещё нужен для резолва каталога и мягкого scoring по городу.
-- Несколько городов / несколько `area=` в одном URL — **пока нет** (будущее: список cities/areas).
+
+### Сессия и смена сайта
+
+Один файл `data/sessions/<profile>.storage.json` на HH workspace. Search крутит targets **последовательно в том же браузере**. Login открывает сайт первой цели; при необходимости зайдите и на второй домен HH и снова сохраните сессию.
 
 ---
 

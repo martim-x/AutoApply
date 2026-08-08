@@ -125,6 +125,7 @@ Railway `PORT` подхватывается CMD: `uvicorn … --port ${PORT:-808
 
 В образе остаются `config/areas.json` и `config/weights.json` (не на volume).
 
-> **Multi-country stub:** поле `targets[]` (несколько site/location в одном launch) задумано, но не реализовано — один `site` + `location` на файл.
+**Multi-country:** в `launch.json` можно задать `targets[]` — несколько `{site, location}`; поиск идёт последовательно по целям до общего `vacancy_limit`.  
+Сессия HH (`sessions/<profile>.storage.json`) одна на оба сайта семейства (rabota.by / hh.ru): тот же browser context, смена `base_url` между targets. Если cookies не шарятся после логина на одном сайте — зайдите на второй в том же Login и снова «Сессия сохранена».
 
 См. также [linkedin.md](./linkedin.md), [getting-started.md](./getting-started.md).

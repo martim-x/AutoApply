@@ -361,10 +361,12 @@ site: rabota.by
 country: Беларусь
 city: Минск
 strict: true
+targets: rabota.by/Беларусь/Минск/true, hh.ru/Россия/Москва/false
 queries: python-разработчик, python-developer
 remote_or_hybrid: true
 skip_gov: true
 python_keywords: true
+vacancy_limit: 30
 apply_limit: 30
 dry_run: false
 salary_min_usd: 2200
@@ -375,10 +377,10 @@ level: middle+
 
 | Field | Meaning |
 |-------|---------|
-| `site` | `rabota.by` or `hh.ru` (country must match the catalog) |
-| `country` / `city` | Strictly from `config/areas.json` → `area=` |
-| `strict` | `true` — city SERP + drop other cities; `false` — **whole country** (Belarus `area=16`) |
-| `queries` | SERP query strings |
+| `site` / `country` / `city` | Primary target (= `targets[0]`); `rabota.by`↔Belarus, `hh.ru`↔Russia |
+| `targets` | Several `site/country/city[/strict]` — sequential search, shared `vacancy_limit` |
+| `strict` | `true` — city SERP + drop other cities; `false` — **whole country for that target** (BY `16`, RU `113`) |
+| `queries` | SERP query strings (shared across targets) |
 | `remote_or_hybrid` | Require remote or hybrid |
 | `skip_gov` | Drop gov markers and `*.gov.*` |
 | `python_keywords` | Require a python / developer signal |
@@ -387,11 +389,11 @@ level: middle+
 | `salary_*` | Legend band $2200-2800; `salary_strict` hard-drops below |
 | `level` | Target level for scoring signals |
 
-After UI edits: **Validate** → **Save filters**.
+After UI edits: **Validate** → **Save** (Countries / sites section).
 
-Country-wide search: `strict: false` (+ `country: Беларусь` → SERP `area=16`). Multi-city list in one launch is not supported yet.
+Country-wide per target: `strict: false`. Kazakhstan / hh.kz is a stub in `areas.json` only for now.
 
-For hh.ru:
+For a single hh.ru target:
 
 ```text
 site: hh.ru

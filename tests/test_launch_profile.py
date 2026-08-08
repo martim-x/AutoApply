@@ -225,3 +225,85 @@ def test_level_signals():
     assert w > 0
     code2, _ = level_match_score("Junior Python", "стажировка", "middle+")
     assert code2 == "level_junior_mismatch"
+
+
+def test_single_site_synthesizes_targets():
+    p = parse_and_validate_text(SAMPLE)
+    targets = p.iter_targets()
+    assert len(targets) == 1
+    assert targets[0].site == "rabota.by"
+    assert targets[0].location.city == "Минск"
+    assert targets[0].search_area == "1002"
+
+
+def test_multi_targets_json():
+    p = validate_launch_dict(
+        {
+            "site": "rabota.by",
+            "location": {"country": "Беларусь", "city": "Минск", "strict": True},
+            "targets": [
+                {
+                    "site": "rabota.by",
+                    "location": {
+                        "country": "Беларусь",
+                        "city": "Минск",
+                        "strict": True,
+                    },
+                },
+                {
+                    "site": "hh.ru",
+                    "location": {
+                        "country": "Россия",
+                        "city": "Москва",
+                        "strict": False,
+                    },
+                },
+            ],
+            "queries": ["python"],
+        }
+    )
+    assert len(p.iter_targets()) == 2
+    assert p.site == "rabota.by"
+    assert p.location.city == "Минск"
+    by, ru = p.iter_targets()
+    assert by.search_area == "1002"
+    assert ru.site == "hh.ru"
+    assert ru.search_area == "113"  # country-wide when strict=false
+    assert ru.location.strict is False
+
+
+def test_targets_dsl_parse_and_roundtrip():
+    text = """
+targets: rabota.by/Беларусь/Минск/true, hh.ru/Россия/Москва/false
+queries: python developer
+vacancy_limit: 12
+"""
+    p = parse_and_validate_text(text)
+    assert len(p.targets) == 2
+    assert p.site == "rabota.by"
+    assert p.targets[1].search_area == "113"
+    again = parse_and_validate_text(launch_to_strict_text(p))
+    assert len(again.targets) == 2
+    assert again.targets[0].site == "rabota.by"
+    assert again.targets[1].site == "hh.ru"
+    assert again.targets[1].location.strict is False
+    assert again.vacancy_limit == 12
+
+
+def test_target_site_country_mismatch():
+    with pytest.raises((ValueError, ValidationError)):
+        validate_launch_dict(
+            {
+                "queries": ["python"],
+                "targets": [
+                    {
+                        "site": "rabota.by",
+                        "location": {
+                            "country": "Россия",
+                            "city": "Москва",
+                            "strict": True,
+                        },
+                    }
+                ],
+            }
+        )

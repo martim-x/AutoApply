@@ -1,4 +1,7 @@
 {
+  "_notes": {
+    "kazakhstan": "Planned later: hh.kz + Казахстан cities/area_ids. Not enabled — add site + location block when HH area catalog is ready."
+  },
   "sites": {
     "rabota.by": {
       "base_url": "https://rabota.by",

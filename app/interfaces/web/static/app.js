@@ -1676,6 +1676,157 @@
     el.classList.toggle("err", !ok && !!text);
   }
 
+  let launchSitesCatalog = {};
+  let launchLocationsCatalog = [];
+  let launchSiteCountries = {
+    "rabota.by": "Беларусь",
+    "hh.ru": "Россия",
+  };
+
+  function launchTargetsFrom(launch) {
+    if (!launch) return [];
+    if (Array.isArray(launch.targets) && launch.targets.length) {
+      return launch.targets.map((t) => ({
+        site: t.site || "rabota.by",
+        location: {
+          country: (t.location && t.location.country) || "",
+          city: (t.location && t.location.city) || "",
+          strict: t.location ? t.location.strict !== false : true,
+        },
+      }));
+    }
+    const loc = launch.location || {};
+    return [
+      {
+        site: launch.site || "rabota.by",
+        location: {
+          country: loc.country || "Беларусь",
+          city: loc.city || "Минск",
+          strict: loc.strict !== false,
+        },
+      },
+    ];
+  }
+
+  function citiesForCountry(country) {
+    const row = (launchLocationsCatalog || []).find((l) => l.country === country);
+    return row && Array.isArray(row.cities) ? row.cities : [];
+  }
+
+  function fillTargetRowSelects(row, target) {
+    const siteSel = row.querySelector(".target-site");
+    const countrySel = row.querySelector(".target-country");
+    const citySel = row.querySelector(".target-city");
+    const strictEl = row.querySelector(".target-strict");
+    const siteKeys = Object.keys(launchSitesCatalog || {});
+    const sites = siteKeys.length ? siteKeys : Object.keys(launchSiteCountries);
+    siteSel.innerHTML = sites
+      .map((s) => {
+        const label =
+          (launchSitesCatalog[s] && launchSitesCatalog[s].label) || s;
+        return `<option value="${s}">${label}</option>`;
+      })
+      .join("");
+    const site = target.site || sites[0] || "rabota.by";
+    siteSel.value = sites.includes(site) ? site : sites[0];
+    const countries = (launchLocationsCatalog || []).map((l) => l.country);
+    const bound = launchSiteCountries[siteSel.value];
+    countrySel.innerHTML = countries
+      .map((c) => `<option value="${c}">${c}</option>`)
+      .join("");
+    let country =
+      (target.location && target.location.country) || bound || countries[0] || "";
+    if (bound && countries.includes(bound)) country = bound;
+    if (!countries.includes(country) && countries.length) country = countries[0];
+    countrySel.value = country;
+    const cities = citiesForCountry(countrySel.value);
+    citySel.innerHTML = cities
+      .map((c) => `<option value="${c}">${c}</option>`)
+      .join("");
+    const city = (target.location && target.location.city) || cities[0] || "";
+    citySel.value = cities.includes(city) ? city : cities[0] || "";
+    if (strictEl) {
+      strictEl.checked = !target.location || target.location.strict !== false;
+    }
+  }
+
+  function bindTargetRow(row) {
+    const siteSel = row.querySelector(".target-site");
+    const countrySel = row.querySelector(".target-country");
+    const citySel = row.querySelector(".target-city");
+    siteSel.addEventListener("change", () => {
+      const bound = launchSiteCountries[siteSel.value];
+      const loc = {
+        country: bound || countrySel.value,
+        city: citySel.value,
+        strict: row.querySelector(".target-strict").checked,
+      };
+      fillTargetRowSelects(row, { site: siteSel.value, location: loc });
+    });
+    countrySel.addEventListener("change", () => {
+      const cities = citiesForCountry(countrySel.value);
+      citySel.innerHTML = cities
+        .map((c) => `<option value="${c}">${c}</option>`)
+        .join("");
+      if (cities.length) citySel.value = cities[0];
+      // Keep site in sync with country binding when possible.
+      for (const [site, c] of Object.entries(launchSiteCountries)) {
+        if (c === countrySel.value) {
+          siteSel.value = site;
+          break;
+        }
+      }
+    });
+    const removeBtn = row.querySelector(".btn-remove-target");
+    if (removeBtn) {
+      removeBtn.addEventListener("click", () => {
+        const list = $("launchTargetsList");
+        if (list && list.children.length <= 1) return;
+        row.remove();
+      });
+    }
+  }
+
+  function createTargetRow(target) {
+    const row = document.createElement("div");
+    row.className = "launch-target-row";
+    row.innerHTML =
+      `<select class="target-site" aria-label="site"></select>` +
+      `<select class="target-country" aria-label="country"></select>` +
+      `<select class="target-city" aria-label="city"></select>` +
+      `<label class="launch-target-strict"><input type="checkbox" class="target-strict" checked /> ` +
+      `<span data-i18n="launch.targets.strict">strict</span></label>` +
+      `<button type="button" class="ghost touch icon-only btn-remove-target" ` +
+      `data-i18n="launch.targets.remove" data-i18n-attr="aria-label,title" title="Удалить" aria-label="Удалить">` +
+      `<svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>`;
+    fillTargetRowSelects(row, target || { site: "rabota.by", location: {} });
+    bindTargetRow(row);
+    return row;
+  }
+
+  function fillTargetsFields(launch) {
+    const list = $("launchTargetsList");
+    if (!list) return;
+    list.innerHTML = "";
+    const targets = launchTargetsFrom(launch);
+    (targets.length ? targets : [{ site: "rabota.by", location: {} }]).forEach(
+      (t) => list.appendChild(createTargetRow(t))
+    );
+  }
+
+  function readTargetsFromFields() {
+    const list = $("launchTargetsList");
+    if (!list) return [];
+    return Array.from(list.querySelectorAll(".launch-target-row")).map((row) => ({
+      site: row.querySelector(".target-site").value,
+      location: {
+        country: row.querySelector(".target-country").value,
+        city: row.querySelector(".target-city").value,
+        strict: !!row.querySelector(".target-strict").checked,
+      },
+    }));
+  }
+
   function updateLaunchMeta(launch) {
     lastLaunch = launch || null;
     launchLoaded = true;
@@ -1685,8 +1836,13 @@
       syncActionLabelsCached();
       return;
     }
-    const loc = launch.location || {};
-    const city = loc.city || loc.country || "?";
+    const targets = launchTargetsFrom(launch);
+    const places = targets
+      .map((t) => {
+        const city = (t.location && t.location.city) || "?";
+        return `${t.site || "?"}/${city}`;
+      })
+      .join(" + ");
     const sal =
       launch.salary_min_usd != null || launch.salary_max_usd != null
         ? `$${launch.salary_min_usd ?? "?"}-${launch.salary_max_usd ?? "?"}`
@@ -1695,7 +1851,7 @@
     const vLim = launch.vacancy_limit ?? 30;
     const aLim = launch.apply_limit ?? 30;
     $("launchMeta").textContent =
-      `${launch.site || "?"} · ${city} · ${sal} · queries=${q} · ` +
+      `${places || "?"} · ${sal} · queries=${q} · ` +
       `search≤${vLim} · apply≤${aLim}`;
     syncLimitsHint();
     syncActionLabelsCached();
@@ -1750,8 +1906,12 @@
 
   async function refreshLaunch() {
     const data = await api("/api/launch");
+    if (data.sites) launchSitesCatalog = data.sites;
+    if (data.locations) launchLocationsCatalog = data.locations;
+    if (data.site_countries) launchSiteCountries = data.site_countries;
     if (data.strict_text) $("launchText").value = data.strict_text;
     updateLaunchMeta(data.launch);
+    fillTargetsFields(data.launch);
     fillScheduleFields(data.launch);
     return data;
   }
@@ -1793,6 +1953,29 @@
     }
   });
 
+  const btnAddTarget = $("btnAddTarget");
+  if (btnAddTarget) {
+    btnAddTarget.onclick = () => {
+      const list = $("launchTargetsList");
+      if (!list) return;
+      const last = readTargetsFromFields().slice(-1)[0];
+      const nextSite =
+        last && last.site === "rabota.by" ? "hh.ru" : "rabota.by";
+      const country = launchSiteCountries[nextSite] || "Беларусь";
+      const cities = citiesForCountry(country);
+      list.appendChild(
+        createTargetRow({
+          site: nextSite,
+          location: {
+            country,
+            city: cities[0] || "",
+            strict: true,
+          },
+        })
+      );
+    };
+  }
+
   $("btnLaunchValidate").onclick = async () => {
     try {
       const r = await api("/api/launch/validate", {
@@ -1803,9 +1986,18 @@
         setLaunchMessage(r.error || t("launch.err.validate"), false);
         return;
       }
-      // Sync schedule UI from textarea DSL, then keep UI as editor source of truth.
+      // Sync structured editors from textarea DSL, then UI is source of truth.
+      fillTargetsFields(r.launch);
       fillScheduleFields(r.launch);
-      const launch = { ...(r.launch || {}), schedule: readScheduleFromFields() };
+      const launch = {
+        ...(r.launch || {}),
+        targets: readTargetsFromFields(),
+        schedule: readScheduleFromFields(),
+      };
+      if (launch.targets[0]) {
+        launch.site = launch.targets[0].site;
+        launch.location = launch.targets[0].location;
+      }
       setLaunchMessage(t("launch.ok"), true);
       updateLaunchMeta(launch);
     } catch (e) {
@@ -1823,7 +2015,16 @@
         setLaunchMessage(parsed.error || t("launch.err.save"), false);
         return;
       }
-      const launch = { ...(parsed.launch || {}), schedule: readScheduleFromFields() };
+      const targets = readTargetsFromFields();
+      const launch = {
+        ...(parsed.launch || {}),
+        targets,
+        schedule: readScheduleFromFields(),
+      };
+      if (targets[0]) {
+        launch.site = targets[0].site;
+        launch.location = targets[0].location;
+      }
       const r = await api("/api/launch/json", {
         method: "POST",
         body: JSON.stringify({ launch }),
@@ -1834,6 +2035,7 @@
       }
       if (r.strict_text) $("launchText").value = r.strict_text;
       updateLaunchMeta(r.launch);
+      fillTargetsFields(r.launch);
       fillScheduleFields(r.launch);
       setLaunchMessage(t("launch.saved", { path: r.path }), true);
       const cfg = await api("/api/config");

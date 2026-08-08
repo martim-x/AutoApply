@@ -500,6 +500,7 @@ class AppService:
 
     def get_launch(self) -> dict[str, Any]:
         from app.domain.launch_profile import (
+            SITE_COUNTRY,
             launch_to_strict_text,
             load_areas_catalog,
             load_launch_profile_with_notes,
@@ -515,6 +516,7 @@ class AppService:
             "example_path": "config/launch.example.json",
             "path": str(self.settings.launch_path),
             "sites": cat.get("sites") or {},
+            "site_countries": dict(SITE_COUNTRY),
             "locations": [
                 {
                     "country": loc["country"],
@@ -537,10 +539,14 @@ class AppService:
         except Exception as e:
             return {"ok": False, "error": str(e)}
         path = save_launch_profile(profile, self.settings.launch_path)
+        targets_label = ", ".join(
+            f"{t.site}/{t.location.city}" for t in profile.iter_targets()
+        )
         self.uow.journal.log(
             "system",
             "launch_saved",
-            f"{profile.site} / {profile.location.country} / {profile.location.city}",
+            targets_label
+            or f"{profile.site} / {profile.location.country} / {profile.location.city}",
         )
         self._nudge_schedulers()
         return {
