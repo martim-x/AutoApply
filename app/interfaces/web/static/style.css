@@ -416,70 +416,7 @@ html[data-workspace="hh"] [data-workspace-panel="linkedin"] {
   display: flex;
   justify-content: flex-end;
   align-items: flex-start;
-  flex-wrap: wrap;
-  gap: var(--space-2);
   padding-top: 0.2rem;
-}
-.status-light {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  min-height: 2.1rem;
-  padding: 0.3rem 0.7rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--status-pill-bg);
-  font-family: var(--mono);
-  font-size: var(--font-tiny);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-  box-shadow: var(--shadow);
-  white-space: nowrap;
-  cursor: default;
-  appearance: none;
-  -webkit-appearance: none;
-}
-.status-light:disabled {
-  opacity: 1;
-  color: var(--muted);
-}
-.status-light .dot {
-  width: 0.62rem;
-  height: 0.62rem;
-  border-radius: 50%;
-  background: var(--light-idle);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
-  flex: 0 0 auto;
-}
-.status-light[data-light="active"] {
-  border-color: var(--primary-line);
-  color: var(--text);
-}
-.status-light[data-light="active"] .dot {
-  background: var(--light-active);
-  animation: pulse 2.2s ease-in-out infinite;
-}
-.status-light[data-light="warn"] {
-  border-color: var(--warn-line);
-  color: var(--text);
-}
-.status-light[data-light="warn"] .dot {
-  background: var(--light-warn);
-  animation: pulse 2.4s ease-in-out infinite;
-}
-.status-light[data-light="error"] {
-  border-color: var(--danger-line);
-  color: var(--text);
-}
-.status-light[data-light="error"] .dot {
-  background: var(--light-error);
-  animation: none;
-}
-.status-light[data-light="idle"] .dot {
-  background: var(--light-idle);
-  animation: none;
 }
 .status-pill {
   display: inline-flex;
@@ -524,7 +461,10 @@ html[data-workspace="hh"] [data-workspace-panel="linkedin"] {
   background: var(--light-active);
   animation: pulse 2.2s ease-in-out infinite;
 }
-.status-pill[data-light="warn"] .dot { background: var(--light-warn); }
+.status-pill[data-light="warn"] .dot {
+  background: var(--light-warn);
+  animation: pulse 2.4s ease-in-out infinite;
+}
 .status-pill[data-light="error"] .dot { background: var(--light-error); }
 
 .controls, .panel, .stats .stat {
@@ -1386,11 +1326,6 @@ a:hover { text-decoration: underline; }
   .workspace-btn {
     min-width: 0;
     padding: 0.5rem 1.6rem;
-  }
-  .status-light {
-    min-height: var(--touch);
-    padding: 0.4rem 0.85rem;
-    font-size: var(--font-meta);
   }
   .status-pill {
     min-height: var(--touch);

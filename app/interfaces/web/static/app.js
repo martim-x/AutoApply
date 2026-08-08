@@ -36,8 +36,6 @@
   let lastHasLiSession = false;
   let lastAlert = null;
   let lastRemoteBrowsers = null;
-  let lastLightHh = "idle";
-  let lastLightLi = "idle";
   let workspace = "hh";
   let liTab = "network";
   let remoteFsDesired = false;
@@ -411,10 +409,15 @@
 
   function workspaceTargets(text, event) {
     const blob = `${event || ""} ${text || ""}`.toLowerCase();
-    const li = /(linkedin|\bli[_ -]|сеть|connect|контакт|checkpoint)/i.test(blob);
-    const hh = /(hh\.|rabota|hhru|\bhh\b|ваканс)/i.test(blob);
+    const li = /(linkedin|\bli[_ -]|сеть|grow.?network|connect|контакт|checkpoint)/i.test(
+      blob
+    );
+    // Do not treat bare «ваканс*» as HH-only — LinkedIn vacancy jobs use it too.
+    const hh = /(hh\.|rabota|hhru|\bhh\b|hh\.ru)/i.test(blob);
+    // Legacy HH login/session copy omits platform name.
+    const hhSession = !li && /(нет сессии|нет сесс)/i.test(blob);
     if (li && !hh) return ["linkedin"];
-    if (hh && !li) return ["hh"];
+    if ((hh || hhSession) && !li) return ["hh"];
     return ["hh", "linkedin"];
   }
 
@@ -442,6 +445,26 @@
     return remotes[ws === "linkedin" ? "linkedin" : "hh"] || null;
   }
 
+  /** When text is ambiguous, prefer the workspace that is busy / missing session. */
+  function targetsHitWorkspace(targets, ws, st) {
+    if (!targets.includes(ws)) return false;
+    if (targets.length === 1) return true;
+    const busy =
+      ws === "linkedin"
+        ? !!(st && (st.busy_linkedin ?? st.busy))
+        : !!(st && (st.busy_hh ?? st.busy));
+    if (busy) return true;
+    const hasSession =
+      ws === "linkedin" ? !!(st && st.has_linkedin_session) : !!(st && st.has_session);
+    const otherBusy =
+      ws === "linkedin" ? !!(st && st.busy_hh) : !!(st && st.busy_linkedin);
+    const otherHas =
+      ws === "linkedin" ? !!(st && st.has_session) : !!(st && st.has_linkedin_session);
+    if (!hasSession && otherHas) return true;
+    if (!busy && !otherBusy && !hasSession && !otherHas) return true;
+    return false;
+  }
+
   function deriveLightState(ws, st) {
     const status = String((st && st.status) || "idle");
     const message = (st && st.message) || "";
@@ -456,12 +479,15 @@
     const remoteErr = !!(remote && remote.error);
     const remoteRun = !!(remote && remote.running);
     const targets = workspaceTargets(message, status);
-    const forWs = targets.includes(ws);
+    const forWs = targetsHitWorkspace(targets, ws, st);
     const alert = st && st.last_alert;
+    const alertTargets = alert
+      ? workspaceTargets(alert.message, alert.event)
+      : [];
     const alertHits =
       alertIsErrorLike(alert) &&
       alertIsRecent(alert) &&
-      workspaceTargets(alert.message, alert.event).includes(ws);
+      targetsHitWorkspace(alertTargets, ws, st);
     const sessionBad = sessionLooksInvalid(status, message) && forWs;
 
     // 1) Red — error / blocker
@@ -472,47 +498,37 @@
     // 2) Yellow — browser/session not ready
     const waiting =
       (status === "waiting_user" || status === "logging_in") && forWs;
-    const remoteOff =
-      typeof remotes.enabled === "boolean" ? !remotes.enabled : false;
-    if (waiting || sessionBad || !hasSession || (remoteOff && !hasSession)) {
+    if (waiting || sessionBad || !hasSession) {
       return "warn";
     }
 
     // 3) Green — work in progress on this workspace
     if (busy || remoteRun) return "active";
-    const working = status === "searching" || status === "applying";
-    if (working && forWs) {
-      const otherBusy =
-        ws === "linkedin"
-          ? !!(st && st.busy_hh)
-          : !!(st && st.busy_linkedin);
-      if (!otherBusy) return "active";
-    }
 
     // 4) Gray — idle / done, session ok
     return "idle";
   }
 
-  function paintStatusLight(el, light, nameKey) {
-    if (!el) return;
-    const state = light || "idle";
-    el.dataset.light = state;
-    const name = t(nameKey);
-    const stateLabel = t(`status.light.${state}`);
-    const title = t("status.light.title", { name, state: stateLabel });
-    el.title = title;
-    el.setAttribute("aria-label", title);
+  function cachedStatusSnapshot() {
+    return {
+      status: lastStatusCode,
+      message: lastStatusMessage,
+      busy_hh: lastBusyHh,
+      busy_linkedin: lastBusyLi,
+      has_session: lastHasSession,
+      has_linkedin_session: lastHasLiSession,
+      last_alert: lastAlert,
+      remote_browsers: lastRemoteBrowsers || {},
+    };
   }
 
-  function paintStatusLights(st) {
-    const hh = deriveLightState("hh", st);
-    const li = deriveLightState("linkedin", st);
-    lastLightHh = hh;
-    lastLightLi = li;
-    paintStatusLight($("statusLightHh"), hh, "status.light.hh");
-    paintStatusLight($("statusLightLi"), li, "status.light.li");
-    const activeLight = workspace === "linkedin" ? li : hh;
-    if (statusPill) statusPill.dataset.light = activeLight;
+  function paintStatusPill(st) {
+    if (!statusPill) return;
+    const light = deriveLightState(workspace, st || cachedStatusSnapshot());
+    statusPill.dataset.light = light;
+    const stateLabel = t(`status.light.${light}`);
+    statusPill.title = stateLabel;
+    statusPill.setAttribute("aria-label", stateLabel);
   }
 
   function setRemoteOverlay(keyOrText, isKey) {
@@ -669,10 +685,7 @@
     const shell = document.querySelector(".shell");
     if (shell) shell.dataset.workspace = workspace;
     document.documentElement.dataset.workspace = workspace;
-    if (statusPill) {
-      statusPill.dataset.light =
-        workspace === "linkedin" ? lastLightLi : lastLightHh;
-    }
+    paintStatusPill();
 
     document.querySelectorAll("[data-workspace-set]").forEach((btn) => {
       btn.setAttribute(
@@ -747,7 +760,7 @@
     lastRemoteBrowsers = st.remote_browsers || null;
     statusPill.dataset.status = status;
     statusLabel.textContent = statusDisplay(status);
-    paintStatusLights(st);
+    paintStatusPill(st);
     setStatusMessage(st.message || "");
 
     const s = st.stats || {};
@@ -1780,16 +1793,7 @@
         ? t("stats.session_ok")
         : t("stats.session_no");
     }
-    paintStatusLights({
-      status: lastStatusCode,
-      message: lastStatusMessage,
-      busy_hh: lastBusyHh,
-      busy_linkedin: lastBusyLi,
-      has_session: lastHasSession,
-      has_linkedin_session: lastHasLiSession,
-      last_alert: lastAlert,
-      remote_browsers: lastRemoteBrowsers || {},
-    });
+    paintStatusPill();
     updateSessionBanner({
       status: lastStatusCode,
       message: lastStatusMessage,
