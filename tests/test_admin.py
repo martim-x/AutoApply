@@ -74,14 +74,19 @@ def test_admin_login_and_save_env(admin_env: Path):
     page = client.get("/admin/env")
     assert page.status_code == 200
     assert "FOO=bar" in page.text
+    assert 'id="varsList"' in page.text
+    assert "admin_env.js" in page.text
+    assert "Raw Editor" in page.text
 
     saved = client.post(
         "/admin/env",
-        data={"content": "HEADLESS=true\nFOO=baz\n"},
+        data={"content": "HEADLESS=true\nFOO=baz\nSMTP_HOST=mail.example\n"},
     )
     assert saved.status_code == 200
     assert "Сохранено" in saved.text
-    assert (admin_env / ".env").read_text(encoding="utf-8") == "HEADLESS=true\nFOO=baz\n"
+    assert (admin_env / ".env").read_text(encoding="utf-8") == (
+        "HEADLESS=true\nFOO=baz\nSMTP_HOST=mail.example\n"
+    )
 
 
 def test_admin_env_requires_auth(admin_env: Path):

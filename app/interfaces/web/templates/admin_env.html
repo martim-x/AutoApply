@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>{{ app_name }} — .env</title>
+  <title>{{ app_name }} — Variables</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23b32626'/%3E%3Ccircle cx='22' cy='16' r='5' fill='%23fff'/%3E%3C/svg%3E" type="image/svg+xml" />
   <link rel="icon" href="/favicon.ico?v=3" sizes="any" />
   <link rel="icon" href="/static/favicon-32.png?v=3" type="image/png" sizes="32x32" />
@@ -16,6 +16,13 @@
         var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
         var resolved = pref === "system" ? (dark ? "dark" : "light") : pref;
         document.documentElement.setAttribute("data-theme", resolved);
+        document.documentElement.setAttribute("data-theme-pref", pref);
+        var lang = localStorage.getItem("aa-lang");
+        if (lang !== "ru" && lang !== "en") {
+          var nav = (navigator.language || "").toLowerCase();
+          lang = nav.indexOf("ru") === 0 ? "ru" : (nav ? "en" : "ru");
+        }
+        document.documentElement.setAttribute("lang", lang);
       } catch (e) {}
     })();
   </script>
@@ -25,16 +32,61 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body class="admin-body">
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <symbol id="i-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="8" cy="15" r="4"/><path d="M11.5 12.5 21 3"/><path d="M16 3h5v5"/><path d="M15 8l3-3"/>
+    </symbol>
+    <symbol id="i-dots" viewBox="0 0 24 24" fill="currentColor">
+      <circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/>
+    </symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>
+    </symbol>
+    <symbol id="i-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 3l18 18"/><path d="M10.6 10.6a3 3 0 0 0 4.2 4.2"/><path d="M9.4 5.1A10.4 10.4 0 0 1 12 5c6.5 0 10 7 10 7a17.5 17.5 0 0 1-3.2 4.3"/><path d="M6.1 6.1C3.7 7.8 2 12 2 12s3.5 7 10 7c1.4 0 2.7-.3 3.9-.8"/>
+    </symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <path d="M12 5v14M5 12h14"/>
+    </symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round">
+      <circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>
+    </symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M20 14.5A7.5 7.5 0 0 1 9.5 4 6.5 6.5 0 1 0 20 14.5z"/></symbol>
+  </svg>
+
   <main class="admin-shell admin-shell-wide">
     <header class="admin-header admin-header-row">
       <div>
         <p class="admin-brand">{{ app_name }}</p>
-        <h1>Редактор .env</h1>
+        <h1 data-i18n="admin.env.title">Variables</h1>
         <p class="admin-lead"><code>{{ env_path }}</code></p>
       </div>
-      <form method="post" action="/admin/logout">
-        <button type="submit">Выйти</button>
-      </form>
+      <div class="admin-header-tools">
+        <div class="theme-switch lang-switch" id="langSwitch" role="group" data-lang="ru" data-i18n="lang.group" data-i18n-attr="aria-label">
+          <button type="button" class="theme-btn lang-opt" data-lang-set="ru" aria-pressed="true" data-i18n="lang.ru.aria" data-i18n-attr="title,aria-label">
+            <span aria-hidden="true">RU</span>
+          </button>
+          <button type="button" class="theme-btn lang-opt" data-lang-set="en" aria-pressed="false" data-i18n="lang.en.aria" data-i18n-attr="title,aria-label">
+            <span aria-hidden="true">EN</span>
+          </button>
+        </div>
+        <div class="theme-switch" role="group" data-i18n="theme.group" data-i18n-attr="aria-label">
+          <button type="button" class="theme-btn" data-theme-set="system" data-i18n="theme.system.aria" data-i18n-attr="title,aria-label">
+            <svg class="ico" aria-hidden="true"><use href="#i-monitor"/></svg>
+          </button>
+          <button type="button" class="theme-btn" data-theme-set="light" data-i18n="theme.light.aria" data-i18n-attr="title,aria-label">
+            <svg class="ico" aria-hidden="true"><use href="#i-sun"/></svg>
+          </button>
+          <button type="button" class="theme-btn" data-theme-set="dark" data-i18n="theme.dark.aria" data-i18n-attr="title,aria-label">
+            <svg class="ico" aria-hidden="true"><use href="#i-moon"/></svg>
+          </button>
+        </div>
+        <form class="logout-form" method="post" action="/admin/logout">
+          <button type="submit" class="logout-btn" data-i18n="logout">Выйти</button>
+        </form>
+      </div>
     </header>
 
     {% if message %}
@@ -44,22 +96,90 @@
     <p class="admin-flash admin-flash-error" role="alert">{{ error }}</p>
     {% endif %}
 
-    <p class="admin-note">
-      После сохранения <strong>перезапустите контейнер</strong> (Railway → Restart),
+    <p class="admin-note" data-i18n="admin.env.note">
+      После сохранения перезапустите контейнер (Railway → Restart),
       иначе часть переменных останется со старыми значениями из памяти процесса.
-      На Railway переменные из панели Variables имеют приоритет над файлом <code>.env</code>.
+      На Railway переменные из панели Variables имеют приоритет над файлом .env.
     </p>
 
-    <form class="admin-card admin-card-editor" method="post" action="/admin/env">
-      <label class="admin-field">
-        <span>Содержимое .env</span>
-        <textarea name="content" spellcheck="false" rows="24" class="admin-env">{{ env_content }}</textarea>
-      </label>
-      <div class="admin-actions">
-        <button type="submit" class="primary admin-submit">Сохранить</button>
-        <a class="admin-link-btn" href="/">К приложению</a>
+    <form id="envForm" class="admin-vars" method="post" action="/admin/env">
+      <div class="admin-vars-toolbar">
+        <label class="admin-vars-search">
+          <svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>
+          <input
+            type="search"
+            id="envSearch"
+            autocomplete="off"
+            spellcheck="false"
+            data-i18n="admin.env.search"
+            data-i18n-attr="placeholder,aria-label"
+            placeholder="Search variables"
+            aria-label="Search variables"
+          />
+        </label>
+        <div class="admin-vars-actions">
+          <button type="button" id="btnRawEditor" class="admin-vars-btn" aria-pressed="false" data-i18n="admin.env.raw">
+            Raw Editor
+          </button>
+          <button type="button" id="btnNewVar" class="admin-vars-btn admin-vars-btn-accent">
+            <svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>
+            <span data-i18n="admin.env.new">New Variable</span>
+          </button>
+          <button type="submit" class="primary admin-vars-btn admin-vars-save" data-i18n="admin.env.save">
+            Сохранить
+          </button>
+        </div>
+      </div>
+
+      <section id="varsListPanel" class="admin-card admin-vars-card" aria-labelledby="varsListHeading">
+        <div class="admin-vars-card-head">
+          <h2 id="varsListHeading" data-i18n="admin.env.shared">Shared Variables</h2>
+          <span id="varsCount" class="admin-vars-count"></span>
+        </div>
+        <ul id="varsList" class="admin-vars-list" role="list"></ul>
+        <p id="varsEmpty" class="admin-vars-empty" hidden data-i18n="admin.env.empty">Нет переменных</p>
+        <p id="varsNoMatch" class="admin-vars-empty" hidden data-i18n="admin.env.nomatch">Ничего не найдено</p>
+      </section>
+
+      <section id="varsRawPanel" class="admin-card admin-card-editor" hidden>
+        <label class="admin-field">
+          <span data-i18n="admin.env.raw.label">Содержимое .env</span>
+          <textarea id="envRaw" name="content" spellcheck="false" rows="24" class="admin-env"></textarea>
+        </label>
+      </section>
+
+      <div class="admin-actions admin-vars-footer">
+        <a class="admin-link-btn" href="/" data-i18n="admin.env.app">К приложению</a>
       </div>
     </form>
   </main>
+
+  <dialog id="varDialog" class="admin-var-dialog">
+    <form method="dialog" id="varDialogForm" class="admin-var-dialog-form">
+      <h2 id="varDialogTitle" data-i18n="admin.env.dialog.add">New Variable</h2>
+      <label class="admin-field">
+        <span data-i18n="admin.env.key">Variable</span>
+        <input type="text" id="varKey" name="key" autocomplete="off" spellcheck="false" required pattern="[A-Za-z_][A-Za-z0-9_]*" />
+      </label>
+      <label class="admin-field">
+        <span data-i18n="admin.env.value">Value</span>
+        <div class="admin-var-value-wrap">
+          <input type="password" id="varValue" name="value" autocomplete="off" spellcheck="false" />
+          <button type="button" id="btnToggleValue" class="admin-var-reveal" data-i18n="admin.env.reveal" data-i18n-attr="title,aria-label" title="Show" aria-label="Show">
+            <svg class="ico" aria-hidden="true"><use href="#i-eye"/></svg>
+          </button>
+        </div>
+      </label>
+      <p id="varDialogError" class="admin-flash admin-flash-error" hidden role="alert"></p>
+      <div class="admin-actions">
+        <button type="submit" value="save" class="primary" data-i18n="admin.env.dialog.ok">Добавить</button>
+        <button type="submit" value="cancel" formnovalidate data-i18n="close">Закрыть</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script id="env-initial" type="application/json">{{ env_content | tojson }}</script>
+  <script src="/static/i18n.js"></script>
+  <script src="/static/admin_env.js"></script>
 </body>
 </html>
