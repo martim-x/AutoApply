@@ -147,20 +147,24 @@ class AlertService:
 
         sent = False
         try:
-            sent = bool(
-                self._send_fn(
-                    self.settings,
-                    subject=subject,
-                    body=body,
-                    html_body=html_body,
-                )
+            result = self._send_fn(
+                self.settings,
+                subject=subject,
+                body=body,
+                html_body=html_body,
             )
+            if isinstance(result, tuple):
+                sent = bool(result[0])
+            else:
+                sent = bool(result)
         except TypeError:
             # Tests / custom send_fn may only accept body=
             try:
-                sent = bool(
-                    self._send_fn(self.settings, subject=subject, body=body)
-                )
+                result = self._send_fn(self.settings, subject=subject, body=body)
+                if isinstance(result, tuple):
+                    sent = bool(result[0])
+                else:
+                    sent = bool(result)
             except Exception as e:
                 log.warning("Alert notify failed: %s", e)
                 sent = False

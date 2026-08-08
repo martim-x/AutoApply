@@ -76,7 +76,7 @@ def test_generate_scheduled_report_emails_without_crashing(
                 "pdf": str(pdf_path) if pdf_path else None,
             }
         )
-        return True
+        return True, "sent"
 
     monkeypatch.setattr(
         "app.infrastructure.alerts.smtp.send_report_email",

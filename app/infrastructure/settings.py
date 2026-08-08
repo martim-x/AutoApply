@@ -162,6 +162,52 @@ class Settings(BaseSettings):
     # Max 1 identical (profile+event+message) email per window
     alert_rate_limit_seconds: int = 600
 
+    @field_validator(
+        "alert_smtp_host",
+        "alert_smtp_user",
+        "alert_smtp_password",
+        "alert_smtp_from",
+        "alert_smtp_to",
+        mode="before",
+    )
+    @classmethod
+    def _strip_smtp_quotes(cls, v: Any) -> Any:
+        if v is None:
+            return v
+        s = str(v).strip()
+        if len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'":
+            return s[1:-1].strip()
+        return s
+
+    @field_validator("alert_smtp_port", mode="before")
+    @classmethod
+    def _parse_smtp_port(cls, v: Any) -> Any:
+        if v is None or v == "":
+            return 587
+        if isinstance(v, int):
+            return v
+        s = str(v).strip()
+        if len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'":
+            s = s[1:-1].strip()
+        return int(s) if s else 587
+
+    @field_validator("alert_smtp_enabled", "alert_smtp_tls", mode="before")
+    @classmethod
+    def _parse_smtp_bool(cls, v: Any) -> Any:
+        if isinstance(v, bool):
+            return v
+        if v is None:
+            return False
+        s = str(v).strip()
+        if len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'":
+            s = s[1:-1].strip()
+        low = s.lower()
+        if low in {"1", "true", "yes", "on"}:
+            return True
+        if low in {"0", "false", "no", "off", ""}:
+            return False
+        return v
+
     def effective_headless(self) -> bool:
         """
         Chromium launch mode for all browsers (login/search/apply/remote).

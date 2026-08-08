@@ -205,13 +205,17 @@ def _maybe_email_report(
 
         plain, html_body = render_report_email(payload, pdf_name=pdf_path.name)
         subject = f"[auto-apply-app] {payload.title} · {profile}"
-        ok = send_report_email(
+        result = send_report_email(
             settings,
             subject=subject,
             body=plain,
             html_body=html_body,
             pdf_path=pdf_path,
         )
+        if isinstance(result, tuple):
+            ok, detail = bool(result[0]), str(result[1] if len(result) > 1 else "")
+        else:
+            ok, detail = bool(result), ""
         if ok:
             uow.journal.log(
                 profile,
@@ -225,11 +229,22 @@ def _maybe_email_report(
             )
             log.info("Report emailed: %s", pdf_path.name)
             return True
+        # Distinguish config skip vs real SMTP failure (Yandex auth, etc.).
+        event = (
+            "report_email_skipped"
+            if detail.startswith("ALERT_SMTP_")
+            else "report_email_error"
+        )
         uow.journal.log(
             profile,
-            "report_email_skipped",
-            "SMTP disabled or misconfigured — PDF kept on disk",
-            payload={"path": str(pdf_path), "kind": kind, "scheduled": scheduled},
+            event,
+            f"{detail or 'SMTP failed'} — PDF kept on disk",
+            payload={
+                "path": str(pdf_path),
+                "kind": kind,
+                "scheduled": scheduled,
+                "detail": detail,
+            },
             level="warning",
         )
         return False

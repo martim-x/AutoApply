@@ -54,10 +54,11 @@ def test_parse_alert_config_soft_defaults():
 def test_send_smtp_alert_calls_sender():
     s = _settings()
     sender = MagicMock(spec=SmtpSender)
-    ok = send_smtp_alert(
+    ok, detail = send_smtp_alert(
         s, subject="sub", body="body", html_body="<p>hi</p>", sender=sender
     )
     assert ok is True
+    assert detail == "sent"
     sender.send.assert_called_once()
     kwargs = sender.send.call_args.kwargs
     assert kwargs["host"] == "smtp.test"
@@ -87,8 +88,31 @@ def test_alert_service_sends_html():
 def test_send_smtp_skipped_when_disabled():
     s = _settings(alert_smtp_enabled=False)
     sender = MagicMock(spec=SmtpSender)
-    assert send_smtp_alert(s, subject="x", body="y", sender=sender) is False
+    ok, detail = send_smtp_alert(s, subject="x", body="y", sender=sender)
+    assert ok is False
+    assert "ENABLED" in detail
     sender.send.assert_not_called()
+
+
+def test_smtp_strips_wrapping_quotes():
+    s = _settings(
+        alert_smtp_host='"smtp.yandex.ru"',
+        alert_smtp_to='"to@test"',
+        alert_smtp_from="'from@test'",
+        alert_smtp_user='"u"',
+        alert_smtp_password='"secret"',
+        alert_smtp_port='"465"',
+    )
+    sender = MagicMock(spec=SmtpSender)
+    ok, _ = send_smtp_alert(s, subject="x", body="y", sender=sender)
+    assert ok is True
+    kwargs = sender.send.call_args.kwargs
+    assert kwargs["host"] == "smtp.yandex.ru"
+    assert kwargs["mail_to"] == "to@test"
+    assert kwargs["mail_from"] == "from@test"
+    assert kwargs["user"] == "u"
+    assert kwargs["password"] == "secret"
+    assert kwargs["port"] == 465
 
 
 def test_attachment_from_path_and_report_email(tmp_path):
@@ -101,7 +125,7 @@ def test_attachment_from_path_and_report_email(tmp_path):
     assert subtype == "pdf"
 
     sender = MagicMock(spec=SmtpSender)
-    ok = send_report_email(
+    ok, detail = send_report_email(
         _settings(),
         subject="report",
         body="plain",
@@ -110,6 +134,7 @@ def test_attachment_from_path_and_report_email(tmp_path):
         sender=sender,
     )
     assert ok is True
+    assert detail == "sent"
     kwargs = sender.send.call_args.kwargs
     assert kwargs["html_body"] == "<p>hi</p>"
     assert kwargs["attachments"]

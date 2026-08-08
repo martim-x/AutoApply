@@ -85,6 +85,14 @@ def attachment_from_path(path: str | Path) -> Attachment:
     return (p.name, data, maintype, subtype)
 
 
+def _strip_env(value: Any) -> str:
+    """Trim whitespace and optional wrapping quotes from Railway/raw env values."""
+    s = str(value or "").strip()
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'":
+        s = s[1:-1].strip()
+    return s
+
+
 def _smtp_credentials(
     settings: Any,
 ) -> dict[str, Any] | None:
@@ -94,21 +102,27 @@ def _smtp_credentials(
     """
     if not getattr(settings, "alert_smtp_enabled", False):
         return None
-    host = (getattr(settings, "alert_smtp_host", None) or "").strip()
-    mail_to = (getattr(settings, "alert_smtp_to", None) or "").strip()
-    mail_from = (getattr(settings, "alert_smtp_from", None) or "").strip()
+    host = _strip_env(getattr(settings, "alert_smtp_host", None))
+    mail_to = _strip_env(getattr(settings, "alert_smtp_to", None))
+    mail_from = _strip_env(getattr(settings, "alert_smtp_from", None))
+    user = _strip_env(getattr(settings, "alert_smtp_user", None))
+    password = _strip_env(getattr(settings, "alert_smtp_password", None))
     if not host or not mail_to:
         log.warning("SMTP skipped: ALERT_SMTP_HOST / ALERT_SMTP_TO missing")
         return None
     if not mail_from:
-        mail_from = (getattr(settings, "alert_smtp_user", None) or "").strip() or mail_to
+        mail_from = user or mail_to
+    try:
+        port = int(_strip_env(getattr(settings, "alert_smtp_port", None)) or 587)
+    except ValueError:
+        port = 587
     return {
         "host": host,
         "mail_to": mail_to,
         "mail_from": mail_from,
-        "port": int(getattr(settings, "alert_smtp_port", 587) or 587),
-        "user": (getattr(settings, "alert_smtp_user", None) or "").strip(),
-        "password": getattr(settings, "alert_smtp_password", None) or "",
+        "port": port,
+        "user": user,
+        "password": password,
         "use_tls": bool(getattr(settings, "alert_smtp_tls", True)),
     }
 
@@ -121,14 +135,16 @@ def send_smtp_alert(
     html_body: str | None = None,
     attachments: list[Attachment] | None = None,
     sender: SmtpSender | None = None,
-) -> bool:
+) -> tuple[bool, str]:
     """
     Send one email using ALERT_SMTP_* settings.
-    Returns True if sent, False if skipped/disabled/misconfigured.
+    Returns (ok, detail). detail explains skip/failure for journal.
     """
     creds = _smtp_credentials(settings)
     if creds is None:
-        return False
+        if not getattr(settings, "alert_smtp_enabled", False):
+            return False, "ALERT_SMTP_ENABLED is false"
+        return False, "ALERT_SMTP_HOST or ALERT_SMTP_TO missing"
 
     smtp = sender or SmtpSender()
     try:
@@ -145,10 +161,10 @@ def send_smtp_alert(
             attachments=attachments,
             use_tls=creds["use_tls"],
         )
-        return True
+        return True, "sent"
     except Exception as e:
         log.warning("SMTP alert failed: %s", e)
-        return False
+        return False, f"SMTP error: {e}"
 
 
 def send_report_email(
@@ -159,10 +175,10 @@ def send_report_email(
     html_body: str | None = None,
     pdf_path: str | Path | None = None,
     sender: SmtpSender | None = None,
-) -> bool:
+) -> tuple[bool, str]:
     """
     Send a report email (HTML + optional PDF) via the same ALERT_SMTP_* channel.
-    Returns True if sent, False if skipped/disabled/misconfigured/failed.
+    Returns (ok, detail).
     """
     attachments: list[Attachment] | None = None
     if pdf_path is not None:
@@ -170,7 +186,7 @@ def send_report_email(
             attachments = [attachment_from_path(pdf_path)]
         except OSError as e:
             log.warning("SMTP report: cannot read PDF %s: %s", pdf_path, e)
-            return False
+            return False, f"cannot read PDF: {e}"
     return send_smtp_alert(
         settings,
         subject=subject,
