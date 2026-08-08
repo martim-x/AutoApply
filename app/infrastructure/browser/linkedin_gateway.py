@@ -327,6 +327,7 @@ class LinkedInBrowserGateway:
             JobStatus.SEARCHING,
             f"LinkedIn vacancies… limit={launch.vacancy_limit}",
         )
+        found = 0
         saved = 0
         walk = s.serp_walk_knobs()
         streak_stop = int(walk["old_streak_stop"])
@@ -398,6 +399,7 @@ class LinkedInBrowserGateway:
                             if not jid or jid in seen_ids:
                                 continue
                             seen_ids.add(jid)
+                            found += 1
                             is_dup = is_duplicate_vacancy(
                                 url=link,
                                 vacancy_id=jid,
@@ -526,8 +528,8 @@ class LinkedInBrowserGateway:
                     pass
 
                 msg = (
-                    f"LinkedIn SERP: сохранено в очередь {saved} "
-                    f"(лимит {launch.vacancy_limit})"
+                    f"LinkedIn SERP найдено: {found}; оставлено в очереди: {saved}; "
+                    f"лимит поиска: {launch.vacancy_limit}"
                 )
                 self._log(profile, "linkedin_vacancies_done", msg)
                 current = uow.jobs.get_status(profile)

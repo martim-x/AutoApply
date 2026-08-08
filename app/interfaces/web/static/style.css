@@ -587,6 +587,16 @@ select, input[type="text"] {
   min-width: 0;
   text-align: right;
 }
+.schedule-hints {
+  flex: 1 1 14rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.schedule-hints .limits-hint {
+  margin: 0;
+}
 .report-menu {
   position: relative;
   flex: 0 0 auto;

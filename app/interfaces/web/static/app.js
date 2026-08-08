@@ -377,6 +377,53 @@
     setReportMenuOpen(false);
   }
 
+  function formatScheduleWhen(value) {
+    if (value == null || value === "") return "—";
+    if (typeof value === "number" && Number.isFinite(value)) {
+      try {
+        return new Date(value * 1000).toLocaleString();
+      } catch (_) {
+        return "—";
+      }
+    }
+    const s = String(value);
+    try {
+      const d = new Date(s);
+      if (!Number.isNaN(d.getTime())) return d.toLocaleString();
+    } catch (_) {}
+    return s.length > 22 ? s.slice(0, 19).replace("T", " ") : s;
+  }
+
+  function paintScheduleHints(st) {
+    const parseEl = $("parseScheduleHint");
+    const reportEl = $("reportScheduleHint");
+    const parse = (st && st.parse_schedule) || null;
+    const report = (st && st.report_schedule) || null;
+    if (parseEl) {
+      if (parse && parse.enabled) {
+        parseEl.textContent = t("parse.schedule.hint", {
+          times: parse.times_display || "—",
+          tz: parse.timezone || "Europe/Minsk",
+          rules: parse.cron_job_rules || "—",
+          when: formatScheduleWhen(parse.next_run_iso),
+          last: formatScheduleWhen(parse.last_run_at),
+        });
+      } else {
+        parseEl.textContent = t("parse.schedule.off");
+      }
+    }
+    if (reportEl) {
+      if (report && report.enabled) {
+        reportEl.textContent = t("report.schedule.hint", {
+          when: formatScheduleWhen(report.next_run_iso),
+          last: formatScheduleWhen(report.last_run_at),
+        });
+      } else {
+        reportEl.textContent = t("report.schedule.off");
+      }
+    }
+  }
+
   function initReportMenu() {
     const btn = $("btnDownloadReport");
     const panel = $("reportMenuPanel");
@@ -790,6 +837,7 @@
     if (st.notifications) showNotifications(st.notifications);
     showLastAlert(st.last_alert);
     updateSessionBanner(st);
+    paintScheduleHints(st);
 
     const remotes = st.remote_browsers || {};
     const remoteForWs =
@@ -1755,10 +1803,11 @@
         setLaunchMessage(r.error || t("launch.err.validate"), false);
         return;
       }
+      // Sync schedule UI from textarea DSL, then keep UI as editor source of truth.
+      fillScheduleFields(r.launch);
       const launch = { ...(r.launch || {}), schedule: readScheduleFromFields() };
       setLaunchMessage(t("launch.ok"), true);
       updateLaunchMeta(launch);
-      fillScheduleFields(launch);
     } catch (e) {
       setLaunchMessage(String(e.message || e), false);
     }

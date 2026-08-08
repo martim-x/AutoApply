@@ -206,10 +206,12 @@ Timezone — IANA (`Europe/Minsk` и т.п.); час/минута считают
 Отдельно от PDF (рекрутеры чаще постят утром/вечером → **12:00 и 00:00**).  
 Локально по умолчанию `PARSE_SCHEDULE_ENABLED=false`. На Railway — `true` после сохранения сессий.
 
+Времена, timezone, bitmask задач и флаг email после cron живут в `launch.json` → `schedule` (редактор в UI «Критерии»).  
+`PARSE_SCHEDULE_ENABLED` — **kill-switch** в env: `false` глушит стрельбу даже если в профиле `enabled=true`.  
+`PARSE_SCHEDULE_TIMES` / `PARSE_SCHEDULE_TIMEZONE` — fallback, если в launch нет `schedule`.
+
 ```env
 PARSE_SCHEDULE_ENABLED=true
-PARSE_SCHEDULE_TIMEZONE=Europe/Minsk
-PARSE_SCHEDULE_TIMES=12:00,00:00
 PARSE_SCHEDULE_PROFILE=default
 PARSE_EARLY_STOP_ENABLED=true
 PARSE_OLD_STREAK_STOP=0
@@ -217,26 +219,16 @@ PARSE_MAX_SERP_PAGES=20
 PARSE_DUP_PAGE_STOP=3
 ```
 
-`PARSE_SCHEDULE_TIMES` — список `HH:MM` через запятую в `PARSE_SCHEDULE_TIMEZONE`.  
-Для smoke-теста можно поставить **один ближайший слот** (например через ~5 минут), не дожидаясь 00:00/12:00:
+Bitmask `cron_job_rules` (4 символа `0`/`1`, слева направо): HH search · HH apply · LI vacancies · LI network.  
+Пример `1111` = все четыре; `1010` = только search + LI vacancies.
 
-```env
-PARSE_SCHEDULE_ENABLED=true
-PARSE_SCHEDULE_TIMEZONE=Europe/Minsk
-PARSE_SCHEDULE_TIMES=14:28
-REPORT_SCHEDULE_ENABLED=true
-REPORT_SCHEDULE_TIMEZONE=Europe/Minsk
-REPORT_SCHEDULE_HOUR=14
-REPORT_SCHEDULE_MINUTE=30
-```
+Для smoke: в UI Criteria поставьте ближайший слот (или временно `PARSE_SCHEDULE_TIMES` как fallback) и `REPORT_SCHEDULE_HOUR/MINUTE` на 1–3 мин позже; после проверки верните `00:00,12:00` / report `04:00`.
 
-После проверки верните прод-слоты (`12:00,00:00` и report `04:00`). Код менять не нужно — только env + рестарт.
+При срабатывании (если сессии есть): волна 1 — HH search + LI vacancies; волна 2 — HH apply + LI network (по битам).  
+После успешного прогона при `email_report_after_run` — HTML-письмо + PDF (тот же `ALERT_SMTP_*`).  
+Дубликаты (URL / `vacancy_id`) → `filtered:duplicate`. SERP newest-first; early-stop после `PARSE_DUP_PAGE_STOP` полностью дублирующих страниц.
 
-При срабатывании: **HH StartSearch** (если есть HH-сессия) и **LinkedIn vacancies** (если есть LI-сессия) — предпочтительно оба.  
-Дубликаты (URL / `vacancy_id` / canonical link уже в БД профиля) → `filtered:duplicate`, без повторной очереди.  
-SERP сортируется по дате (`order_by=publication_time` / LinkedIn `sortBy=DD`). Если страница целиком из уже известных — переход на следующую (`serp_skip_dup_page`); после `PARSE_DUP_PAGE_STOP` таких страниц подряд — `early_stop:dup_pages`. Потолок — `PARSE_MAX_SERP_PAGES` или `vacancy_limit` новых.
-
-В UI — подсказка «парсинг по расписанию / последний парсинг» рядом с блоком отчёта.
+В UI рядом с блоком отчёта — подсказки «парсинг по расписанию» и «расписание PDF» (след. / последний запуск).
 
 ---
 
@@ -253,7 +245,9 @@ SERP сортируется по дате (`order_by=publication_time` / LinkedI
 
 | Путь | Что |
 |------|-----|
-| `config/launch.json` | ваш прогон (не коммитить) |
+| `data/config/launch.json` | HH критерии + `schedule` (UI Save; на Railway volume; не коммитить) |
+| `data/config/linkedin.launch.json` | LinkedIn критерии |
+| `config/launch.example.json` | пример HH launch (в образе) |
 | `config/weights.json` | дерево весов scoring |
 | `config/areas.json` | каталог стран/городов → `area_id` |
 | `data/auto_apply_app.sqlite` | очередь, логи, статусы (создаётся пустой при первом старте; legacy `rabota_apply.sqlite` переименовывается; `RESET_DB=true` — разовый сброс) |
