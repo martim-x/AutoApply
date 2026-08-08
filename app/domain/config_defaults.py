@@ -46,6 +46,10 @@ def deep_merge_defaults(
             elif isinstance(default_val, list) and (
                 not isinstance(dst[key], list) or len(dst[key]) == 0
             ):
+                # Keep non-empty strings (e.g. schedule.times: "00:00, 08:00")
+                # for field validators — do not replace with list defaults.
+                if isinstance(dst[key], str) and dst[key].strip():
+                    continue
                 dst[key] = deepcopy(default_val)
                 notes.append(f"using default {loc} because empty/invalid")
 

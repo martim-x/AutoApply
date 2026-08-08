@@ -67,7 +67,7 @@ REPORT_SCHEDULE_PROFILE=default
 
 # Kill-switch for cron jobs; times/timezone/bitmask → launch.json → schedule (UI Criteria)
 PARSE_SCHEDULE_ENABLED=true
-PARSE_SCHEDULE_PROFILE=default
+PARSE_SCHEDULE_PROFILE=all
 PARSE_EARLY_STOP_ENABLED=true
 PARSE_OLD_STREAK_STOP=0
 PARSE_MAX_SERP_PAGES=20

@@ -235,7 +235,8 @@ Timezone — IANA (`Europe/Minsk` и т.п.); час/минута считают
 
 ```env
 PARSE_SCHEDULE_ENABLED=true
-PARSE_SCHEDULE_PROFILE=default
+# all = каждый cookie-профиль с HH/LinkedIn сессией; или одно имя (default, …)
+PARSE_SCHEDULE_PROFILE=all
 PARSE_EARLY_STOP_ENABLED=true
 PARSE_OLD_STREAK_STOP=0
 PARSE_MAX_SERP_PAGES=20

@@ -186,12 +186,18 @@ class SchedulePref(BaseModel):
     @field_validator("times", mode="before")
     @classmethod
     def _norm_times(cls, v: Any) -> list[str]:
+        # Flatten str / list / nested tokens. Split on comma/semicolon/whitespace
+        # so UI values like ["00:00 08:00"] still parse (not only "00:00, 08:00").
+        raw_parts: list[Any]
         if isinstance(v, str):
-            parts = re.split(r"[,;\s]+", v)
+            raw_parts = [v]
         elif isinstance(v, list):
-            parts = v
+            raw_parts = v
         else:
-            parts = ["00:00", "12:00"]
+            raw_parts = ["00:00", "12:00"]
+        parts: list[str] = []
+        for raw in raw_parts:
+            parts.extend(re.split(r"[,;\s]+", str(raw)))
         out: list[str] = []
         seen: set[str] = set()
         for p in parts:
@@ -214,6 +220,7 @@ class SchedulePref(BaseModel):
                 continue
             seen.add(token)
             out.append(token)
+        out.sort()
         return out or ["00:00", "12:00"]
 
     @field_validator("cron_job_rules", mode="before")

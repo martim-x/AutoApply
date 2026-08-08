@@ -1111,12 +1111,33 @@ html.modal-open body {
   margin: var(--space-2) 0;
   font-size: var(--font-ui);
 }
-.launch-sched-row input[type="text"] {
+.launch-sched-row input[type="text"],
+.launch-sched-row input[type="search"],
+.launch-sched-row select {
   flex: 1 1 12rem;
   min-height: var(--touch);
   padding: 0.4rem 0.65rem;
   border: 1px solid var(--line);
   border-radius: 8px;
+  background: var(--bg, #fff);
+  color: inherit;
+  font: inherit;
+}
+.launch-sched-tz {
+  align-items: stretch;
+}
+.launch-sched-tz-filter {
+  flex: 1 1 8rem;
+  max-width: 12rem;
+}
+.launch-sched-tz-select {
+  flex: 2 1 14rem;
+  max-height: 2.75rem;
+}
+.launch-sched-note {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-tiny, 0.8rem);
+  opacity: 0.85;
   background: var(--input-bg);
   color: var(--text);
   font: inherit;

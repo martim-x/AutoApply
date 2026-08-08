@@ -28,6 +28,27 @@ def test_deep_merge_fills_missing_keys():
     assert any("locations" in n for n in notes)
 
 
+def test_deep_merge_keeps_string_list_fields():
+    """schedule.times as a comma string must not be wiped by list defaults."""
+    raw = {
+        "site": "rabota.by",
+        "location": {"country": "Беларусь", "city": "Минск"},
+        "queries": ["python"],
+        "schedule": {
+            "enabled": True,
+            "timezone": "Europe/Minsk",
+            "times": "00:00, 08:00",
+            "cron_job_rules": "1111",
+            "email_report_after_run": True,
+        },
+    }
+    merged, notes = deep_merge_defaults(raw, HH_LAUNCH_DEFAULTS, prefix="launch")
+    assert merged["schedule"]["times"] == "00:00, 08:00"
+    assert not any("schedule.times" in n for n in notes)
+    profile = validate_launch_dict(merged)
+    assert profile.schedule.times == ["00:00", "08:00"]
+
+
 def test_linkedin_load_missing_file_uses_defaults(tmp_path: Path):
     path = tmp_path / "missing.json"
     profile, result = load_linkedin_launch(path)

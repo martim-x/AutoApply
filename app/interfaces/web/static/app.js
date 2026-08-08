@@ -415,6 +415,11 @@
           times: parse.times_display || "—",
           tz: parse.timezone || "Europe/Minsk",
           rules: parse.cron_job_rules || "—",
+          profiles:
+            parse.profile_display ||
+            (Array.isArray(parse.profiles) && parse.profiles.length
+              ? parse.profiles.join(",")
+              : parse.profile || "—"),
           when: formatScheduleWhen(parse.next_run_iso),
           last: formatScheduleWhen(parse.last_run_at),
         });
@@ -579,53 +584,10 @@
     };
   }
 
-  const FAVICON_COLORS = {
-    idle: "#8a938c",
-    warn: "#c9a227",
-    active: "#1f6b3a",
-    error: "#b32626",
-  };
-  let lastFaviconLight = null;
-  let statusPolledOnce = false;
-
-  function faviconDataUri(color) {
-    const svg =
-      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">` +
-      `<rect width="32" height="32" rx="8" fill="${color}"/>` +
-      `<circle cx="22" cy="16" r="5" fill="#fff"/>` +
-      `</svg>`;
-    return `data:image/svg+xml,${encodeURIComponent(svg)}`;
-  }
-
-  function setFaviconLight(light) {
-    const key = FAVICON_COLORS[light] ? light : "idle";
-    if (key === lastFaviconLight) return;
-    lastFaviconLight = key;
-    const href = faviconDataUri(FAVICON_COLORS[key]);
-    const links = document.querySelectorAll(
-      'link[rel="icon"], link[rel="shortcut icon"]'
-    );
-    if (!links.length) {
-      const link = document.createElement("link");
-      link.rel = "icon";
-      link.type = "image/svg+xml";
-      link.href = href;
-      document.head.appendChild(link);
-      return;
-    }
-    links.forEach((link) => {
-      link.type = "image/svg+xml";
-      link.removeAttribute("sizes");
-      link.href = href;
-    });
-  }
-
   function paintStatusPill(st) {
     if (!statusPill) return;
     const light = deriveLightState(workspace, st || cachedStatusSnapshot());
     statusPill.dataset.light = light;
-    // Gray until the first /api/status response (cached defaults look like "warn").
-    setFaviconLight(statusPolledOnce ? light : "idle");
     const stateLabel = t(`status.light.${light}`);
     statusPill.title = stateLabel;
     statusPill.setAttribute("aria-label", stateLabel);
@@ -858,7 +820,6 @@
     lastHasLiSession = !!st.has_linkedin_session;
     lastAlert = st.last_alert || null;
     lastRemoteBrowsers = st.remote_browsers || null;
-    statusPolledOnce = true;
     statusPill.dataset.status = status;
     statusLabel.textContent = statusDisplay(status);
     paintStatusPill(st);
@@ -1911,13 +1872,51 @@
     syncActionLabelsCached();
   }
 
+  let launchTimezones = ["Europe/Minsk"];
+
+  function ensureTimezoneOption(select, value) {
+    if (!select || !value) return;
+    const exists = Array.from(select.options).some((o) => o.value === value);
+    if (!exists) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = value;
+      select.appendChild(opt);
+    }
+  }
+
+  function populateTimezoneSelect(zones, selected) {
+    const select = $("schedTimezone");
+    if (!select) return;
+    const list =
+      Array.isArray(zones) && zones.length ? zones.slice().sort() : launchTimezones;
+    launchTimezones = list;
+    const want = selected || select.value || "Europe/Minsk";
+    const filterEl = $("schedTimezoneFilter");
+    const q = ((filterEl && filterEl.value) || "").trim().toLowerCase();
+    select.innerHTML = "";
+    for (const z of list) {
+      if (q && !z.toLowerCase().includes(q)) continue;
+      const opt = document.createElement("option");
+      opt.value = z;
+      opt.textContent = z;
+      select.appendChild(opt);
+    }
+    ensureTimezoneOption(select, want);
+    select.value = want;
+    if (select.value !== want) {
+      ensureTimezoneOption(select, "Europe/Minsk");
+      select.value = "Europe/Minsk";
+    }
+  }
+
   function fillScheduleFields(launch) {
     const sched = (launch && launch.schedule) || {};
     const rules = String(sched.cron_job_rules || "1111").padEnd(4, "0");
     const en = $("schedEnabled");
     if (en) en.checked = sched.enabled !== false;
-    const tz = $("schedTimezone");
-    if (tz) tz.value = sched.timezone || "Europe/Minsk";
+    const tzName = sched.timezone || "Europe/Minsk";
+    populateTimezoneSelect(launchTimezones, tzName);
     const times = $("schedTimes");
     if (times) {
       times.value = Array.isArray(sched.times)
@@ -1941,13 +1940,15 @@
   function readScheduleFromFields() {
     const bit = (id) => ($(id) && $(id).checked ? "1" : "0");
     const timesRaw = ($("schedTimes") && $("schedTimes").value) || "00:00, 12:00";
+    // Split on comma / semicolon / whitespace so "00:00 08:00" works.
     const times = timesRaw
-      .split(/[,;]+/)
+      .split(/[,;\s]+/)
       .map((s) => s.trim())
       .filter(Boolean);
+    const tzSel = $("schedTimezone");
     return {
       enabled: !!($("schedEnabled") && $("schedEnabled").checked),
-      timezone: (($("schedTimezone") && $("schedTimezone").value) || "Europe/Minsk").trim(),
+      timezone: ((tzSel && tzSel.value) || "Europe/Minsk").trim(),
       times: times.length ? times : ["00:00", "12:00"],
       cron_job_rules:
         bit("schedBitHhSearch") +
@@ -1963,6 +1964,9 @@
     if (data.sites) launchSitesCatalog = data.sites;
     if (data.locations) launchLocationsCatalog = data.locations;
     if (data.site_countries) launchSiteCountries = data.site_countries;
+    if (Array.isArray(data.timezones) && data.timezones.length) {
+      launchTimezones = data.timezones;
+    }
     if (data.strict_text) $("launchText").value = data.strict_text;
     updateLaunchMeta(data.launch);
     fillTargetsFields(data.launch);
@@ -2030,8 +2034,19 @@
     };
   }
 
+  const schedTzFilter = $("schedTimezoneFilter");
+  if (schedTzFilter) {
+    schedTzFilter.addEventListener("input", () => {
+      const cur = ($("schedTimezone") && $("schedTimezone").value) || "Europe/Minsk";
+      populateTimezoneSelect(launchTimezones, cur);
+    });
+  }
+
   $("btnLaunchValidate").onclick = async () => {
     try {
+      // Structured schedule/targets editors win over stale DSL lines in the textarea.
+      const uiSchedule = readScheduleFromFields();
+      const uiTargets = readTargetsFromFields();
       const r = await api("/api/launch/validate", {
         method: "POST",
         body: JSON.stringify({ text: $("launchText").value }),
@@ -2040,18 +2055,17 @@
         setLaunchMessage(r.error || t("launch.err.validate"), false);
         return;
       }
-      // Sync structured editors from textarea DSL, then UI is source of truth.
-      fillTargetsFields(r.launch);
-      fillScheduleFields(r.launch);
       const launch = {
         ...(r.launch || {}),
-        targets: readTargetsFromFields(),
-        schedule: readScheduleFromFields(),
+        targets: uiTargets.length ? uiTargets : (r.launch && r.launch.targets) || [],
+        schedule: uiSchedule,
       };
       if (launch.targets[0]) {
         launch.site = launch.targets[0].site;
         launch.location = launch.targets[0].location;
       }
+      fillTargetsFields(launch);
+      fillScheduleFields(launch);
       setLaunchMessage(t("launch.ok"), true);
       updateLaunchMeta(launch);
     } catch (e) {
@@ -2061,6 +2075,9 @@
 
   $("btnLaunchSave").onclick = async () => {
     try {
+      // Read UI schedule/targets BEFORE validate so DSL cannot wipe custom times.
+      const uiSchedule = readScheduleFromFields();
+      const targets = readTargetsFromFields();
       const parsed = await api("/api/launch/validate", {
         method: "POST",
         body: JSON.stringify({ text: $("launchText").value }),
@@ -2069,11 +2086,10 @@
         setLaunchMessage(parsed.error || t("launch.err.save"), false);
         return;
       }
-      const targets = readTargetsFromFields();
       const launch = {
         ...(parsed.launch || {}),
         targets,
-        schedule: readScheduleFromFields(),
+        schedule: uiSchedule,
       };
       if (targets[0]) {
         launch.site = targets[0].site;
@@ -2340,7 +2356,6 @@
   initLogFullscreen();
   initBackToTop();
   if (window.AA_I18N) window.AA_I18N.initLang();
-  setFaviconLight("idle");
   setStatusMessage(t("status.ready"));
 
   const logoutForm = $("logoutForm");

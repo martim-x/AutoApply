@@ -499,6 +499,8 @@ class AppService:
         }
 
     def get_launch(self) -> dict[str, Any]:
+        from zoneinfo import available_timezones
+
         from app.domain.launch_profile import (
             SITE_COUNTRY,
             launch_to_strict_text,
@@ -524,6 +526,7 @@ class AppService:
                 }
                 for loc in (cat.get("locations") or [])
             ],
+            "timezones": sorted(available_timezones()),
             "notifications": notes,
         }
 

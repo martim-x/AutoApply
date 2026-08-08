@@ -30,6 +30,8 @@ __all__ = [
     "ReportScheduler",
     "ParseScheduler",
     "resolve_effective_parse_schedule",
+    "resolve_cron_profiles",
+    "list_profiles_with_sessions",
     "cron_bit",
     "SCHEDULE_POLL_SECONDS",
 ]
@@ -107,14 +109,62 @@ def cron_bit(rules: str | None, index: int) -> bool:
     return bits[index] == "1"
 
 
-def resolve_effective_parse_schedule(settings: Settings) -> dict[str, Any]:
+def list_profiles_with_sessions(settings: Settings, uow: UnitOfWork) -> list[str]:
+    """Browser profiles that have HH and/or LinkedIn session storage on disk."""
+    out: list[str] = []
+    try:
+        profiles = uow.profiles.list_profiles()
+    except Exception:
+        return out
+    for p in profiles:
+        name = getattr(p, "name", None) or str(p)
+        name = (name or "").strip()
+        if not name:
+            continue
+        if settings.state_path(name).exists() or settings.linkedin_state_path(name).exists():
+            out.append(name)
+    return out
+
+
+def resolve_cron_profiles(
+    settings: Settings,
+    uow: UnitOfWork,
+    *,
+    profile_filter: str | None = None,
+) -> list[str]:
+    """
+    Profiles to run on a parse-schedule tick.
+
+    PARSE_SCHEDULE_PROFILE=all|*|empty → all profiles with session files.
+    Otherwise → that single profile name (resolved via DB).
+    """
+    from app.infrastructure.settings import normalize_parse_schedule_profile
+
+    filt = normalize_parse_schedule_profile(
+        profile_filter if profile_filter is not None else settings.parse_schedule_profile
+    )
+    if filt == "all":
+        return list_profiles_with_sessions(settings, uow)
+    try:
+        return [uow.profiles.resolve_profile(filt)]
+    except Exception:
+        return [filt]
+
+
+def resolve_effective_parse_schedule(
+    settings: Settings,
+    uow: UnitOfWork | None = None,
+) -> dict[str, Any]:
     """
     Merge launch.schedule with env PARSE_SCHEDULE_*.
 
     - Env PARSE_SCHEDULE_ENABLED is a kill-switch (must be true to run).
-    - Profile schedule supplies times / timezone / bitmask / email flag.
+    - launch.json schedule supplies times / timezone / bitmask / email flag
+      (one shared search config for the whole app — not per browser profile).
     - Env times/timezone used as fallback when profile schedule is absent.
-    - SERP knobs and profile name stay env-driven.
+    - SERP knobs stay env-driven.
+    - PARSE_SCHEDULE_PROFILE selects browser cookie profile(s):
+      all/* /empty → every profile with HH/LinkedIn sessions; else one name.
     """
     from app.domain.launch_profile import load_launch_profile
     from app.infrastructure.settings import parse_schedule_times_list
@@ -123,6 +173,19 @@ def resolve_effective_parse_schedule(settings: Settings) -> dict[str, Any]:
     notes = list(env.get("notifications") or [])
     launch = load_launch_profile(settings.launch_path)
     sched = launch.schedule if launch else None
+    profile_filter = env["profile"]
+    profiles: list[str] = []
+    if uow is not None:
+        profiles = resolve_cron_profiles(
+            settings, uow, profile_filter=profile_filter
+        )
+    elif profile_filter != "all":
+        profiles = [profile_filter]
+    profile_display = (
+        ",".join(profiles)
+        if profiles
+        else ("all(sessions)" if profile_filter == "all" else profile_filter)
+    )
 
     if sched is None:
         rules = "1010"  # legacy: HH search + LI vacancies
@@ -134,6 +197,8 @@ def resolve_effective_parse_schedule(settings: Settings) -> dict[str, Any]:
             "hh_apply": cron_bit(rules, BIT_HH_APPLY),
             "li_vacancies": cron_bit(rules, BIT_LI_VACANCIES),
             "li_network": cron_bit(rules, BIT_LI_NETWORK),
+            "profiles": profiles,
+            "profile_display": profile_display,
             "source": "env",
             "notifications": notes,
         }
@@ -146,6 +211,10 @@ def resolve_effective_parse_schedule(settings: Settings) -> dict[str, Any]:
         )
     elif not sched.enabled:
         notes.append("launch.schedule.enabled=false — scheduled parse idle")
+    if profile_filter == "all":
+        notes.append(
+            "PARSE_SCHEDULE_PROFILE=all — cron runs each browser profile with sessions"
+        )
 
     times_raw = ",".join(sched.times) if sched.times else settings.parse_schedule_times
     times, time_notes = parse_schedule_times_list(times_raw)
@@ -158,7 +227,9 @@ def resolve_effective_parse_schedule(settings: Settings) -> dict[str, Any]:
         "timezone": tz,
         "times": times,
         "times_display": ",".join(f"{h:02d}:{m:02d}" for h, m in times),
-        "profile": env["profile"],
+        "profile": profile_filter,
+        "profiles": profiles,
+        "profile_display": profile_display,
         "early_stop_enabled": env["early_stop_enabled"],
         "old_streak_stop": env["old_streak_stop"],
         "max_serp_pages": env["max_serp_pages"],
@@ -471,7 +542,7 @@ class ParseScheduler:
         self._wake.set()
 
     def status(self) -> dict[str, Any]:
-        sched = resolve_effective_parse_schedule(self.settings)
+        sched = resolve_effective_parse_schedule(self.settings, self.uow)
         next_iso = None
         if sched.get("enabled"):
             tz = resolve_tz(sched["timezone"])
@@ -519,7 +590,7 @@ class ParseScheduler:
                     break
                 continue
 
-            sched = resolve_effective_parse_schedule(self.settings)
+            sched = resolve_effective_parse_schedule(self.settings, self.uow)
             if not sched["enabled"]:
                 self.next_run_iso = None
                 target = None
@@ -537,30 +608,34 @@ class ParseScheduler:
                 sched["timezone"],
                 sched.get("cron_job_rules"),
                 bool(sched.get("email_report_after_run")),
+                sched.get("profile"),
+                tuple(sched.get("profiles") or ()),
             )
             now = datetime.now(tz)
             nxt = next_run_at_times(times, tz, now=now)
             if target is None or key != target_key:
                 if target is not None and key != target_key:
                     log.info(
-                        "Parse schedule changed: next_run %s → %s rules=%s",
+                        "Parse schedule changed: next_run %s → %s rules=%s profiles=%s",
                         target.isoformat(),
                         nxt.isoformat(),
                         sched.get("cron_job_rules"),
+                        sched.get("profile_display"),
                     )
                 target = nxt
                 target_key = key
                 log.info(
-                    "Parse scheduler: next run at %s rules=%s",
+                    "Parse scheduler: next run at %s rules=%s profiles=%s",
                     target.isoformat(),
                     sched.get("cron_job_rules"),
+                    sched.get("profile_display"),
                 )
 
             self.next_run_iso = target.isoformat()
             delay = (target - datetime.now(tz)).total_seconds()
             if delay <= 0:
                 # Re-resolve so UI-saved launch.schedule applies at fire time.
-                sched = resolve_effective_parse_schedule(self.settings)
+                sched = resolve_effective_parse_schedule(self.settings, self.uow)
                 if not sched["enabled"]:
                     target = None
                     target_key = None
@@ -574,8 +649,9 @@ class ParseScheduler:
                 except Exception as e:
                     self.last_error = str(e)
                     log.exception("Scheduled parse failed: %s", e)
+                    err_profile = (sched.get("profiles") or [sched.get("profile") or "default"])[0]
                     self.uow.journal.log(
-                        sched["profile"],
+                        err_profile,
                         "parse_schedule_error",
                         str(e),
                         level="error",
@@ -584,7 +660,7 @@ class ParseScheduler:
                         from app.application.alerts import get_alert_service
 
                         get_alert_service(self.settings).notify_error(
-                            sched["profile"],
+                            err_profile,
                             str(e),
                             event="parse_schedule_error",
                         )
@@ -647,7 +723,88 @@ class ParseScheduler:
             skipped.append(label)
 
     async def _fire(self, sched: dict[str, Any]) -> dict[str, Any]:
-        profile = self.uow.profiles.resolve_profile(sched.get("profile"))
+        """
+        Run scheduled jobs for each resolved browser profile sequentially.
+
+        Email (when enabled): one HTML+PDF report per profile after that
+        profile's waves finish (reports are profile-scoped in the DB).
+        """
+        profiles = list(sched.get("profiles") or [])
+        if not profiles:
+            profiles = resolve_cron_profiles(
+                self.settings,
+                self.uow,
+                profile_filter=sched.get("profile"),
+            )
+        if not profiles:
+            msg = "no browser profiles with HH/LinkedIn sessions — skip"
+            self.uow.journal.log(
+                "system",
+                "parse_scheduled_skip",
+                msg,
+                level="warning",
+                payload={"profile_filter": sched.get("profile")},
+            )
+            return {
+                "ok": False,
+                "error": msg,
+                "profiles": [],
+                "by_profile": {},
+                "started": [],
+                "skipped": [],
+                "errors": [msg],
+                "emailed": False,
+            }
+
+        by_profile: dict[str, dict[str, Any]] = {}
+        all_started: list[str] = []
+        all_skipped: list[str] = []
+        all_errors: list[str] = []
+        any_emailed = False
+
+        for profile in profiles:
+            if self._stop.is_set():
+                break
+            one = await self._fire_one(sched, profile)
+            by_profile[profile] = one
+            for label in one.get("started") or []:
+                all_started.append(f"{profile}:{label}")
+            for label in one.get("skipped") or []:
+                all_skipped.append(f"{profile}:{label}")
+            for err in one.get("errors") or []:
+                all_errors.append(f"{profile}:{err}")
+            if one.get("emailed"):
+                any_emailed = True
+
+        ok = bool(by_profile) and not all_errors
+        self.uow.journal.log(
+            "system",
+            "parse_scheduled_batch_done",
+            (
+                f"profiles={list(by_profile)} started={all_started} "
+                f"errors={all_errors} emailed={any_emailed}"
+            ),
+            payload={
+                "profiles": list(by_profile),
+                "started": all_started,
+                "skipped": all_skipped,
+                "errors": all_errors,
+                "emailed": any_emailed,
+                "cron_job_rules": sched.get("cron_job_rules"),
+            },
+        )
+        return {
+            "ok": ok,
+            "profiles": list(by_profile),
+            "by_profile": by_profile,
+            "started": all_started,
+            "skipped": all_skipped,
+            "errors": all_errors,
+            "emailed": any_emailed,
+        }
+
+    async def _fire_one(self, sched: dict[str, Any], profile: str) -> dict[str, Any]:
+        profile = self.uow.profiles.resolve_profile(profile)
         hh_path = self.settings.state_path(profile)
         li_path = self.settings.linkedin_state_path(profile)
         has_hh = hh_path.exists()

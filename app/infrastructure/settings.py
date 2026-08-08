@@ -136,7 +136,9 @@ class Settings(BaseSettings):
     parse_schedule_timezone: str = "Europe/Minsk"
     # Comma-separated HH:MM (or bare hours): "12:00,00:00"
     parse_schedule_times: str = "12:00,00:00"
-    parse_schedule_profile: str = "default"
+    # Browser cookie profile(s) for cron. "all" / "*" / empty → every profile
+    # that has an HH and/or LinkedIn session file; otherwise a single name.
+    parse_schedule_profile: str = "all"
     # SERP walk (newest-first): paginate past known listings instead of
     # aborting on a short item streak. Early-stop = consecutive fully-duplicate pages.
     parse_early_stop_enabled: bool = True
@@ -454,7 +456,7 @@ class Settings(BaseSettings):
             notes.append(
                 "using default PARSE_SCHEDULE_TIMEZONE=Europe/Minsk because missing"
             )
-        profile = (self.parse_schedule_profile or "default").strip() or "default"
+        profile = normalize_parse_schedule_profile(self.parse_schedule_profile)
         return {
             "enabled": bool(self.parse_schedule_enabled),
             "timezone": tz,
@@ -519,6 +521,19 @@ class Settings(BaseSettings):
             "rate_limit_seconds": window,
             "notifications": notes,
         }
+
+
+def normalize_parse_schedule_profile(raw: str | None) -> str:
+    """
+    Resolve PARSE_SCHEDULE_PROFILE.
+
+    - empty / "all" / "*" → sentinel "all" (every profile with sessions)
+    - otherwise → trimmed profile name
+    """
+    text = (raw or "").strip()
+    if not text or text.casefold() in ("all", "*"):
+        return "all"
+    return text
 
 
 def parse_schedule_times_list(

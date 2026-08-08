@@ -63,6 +63,18 @@ email_report_after_run: false
     assert p.schedule.job_enabled(1) is False
 
 
+def test_schedule_pref_accepts_custom_times():
+    from app.domain.launch_profile import SchedulePref
+
+    s = SchedulePref(times=["00:00", "08:00"])
+    assert s.times == ["00:00", "08:00"]
+    # Space-separated single list token must not fall back to defaults.
+    s2 = SchedulePref(times=["00:00 08:00"])
+    assert s2.times == ["00:00", "08:00"]
+    s3 = SchedulePref(times="00:00, 8:00")
+    assert s3.times == ["00:00", "08:00"]
+
+
 def test_cron_bit_helpers():
     assert cron_bit("1111", BIT_HH_SEARCH)
     assert cron_bit("1111", BIT_HH_APPLY)
@@ -230,3 +242,72 @@ def test_parse_scheduler_nudge_sets_wake():
     assert not sched._wake.is_set()
     sched.nudge()
     assert sched._wake.is_set()
+
+
+def test_normalize_parse_schedule_profile_all():
+    from app.infrastructure.settings import normalize_parse_schedule_profile
+
+    assert normalize_parse_schedule_profile("all") == "all"
+    assert normalize_parse_schedule_profile("*") == "all"
+    assert normalize_parse_schedule_profile("") == "all"
+    assert normalize_parse_schedule_profile("  ") == "all"
+    assert normalize_parse_schedule_profile("default") == "default"
+    assert normalize_parse_schedule_profile("work") == "work"
+
+
+def test_resolve_cron_profiles_all_with_sessions(tmp_path: Path):
+    from app.infrastructure.scheduler import resolve_cron_profiles
+
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    (sessions / "alice.storage.json").write_text("{}", encoding="utf-8")
+    (sessions / "bob.linkedin.storage.json").write_text("{}", encoding="utf-8")
+    s = Settings(
+        _env_file=None,
+        data_dir=tmp_path,
+        sessions_dir=sessions,
+        parse_schedule_profile="all",
+    )
+    uow = MagicMock()
+    alice = MagicMock()
+    alice.name = "alice"
+    bob = MagicMock()
+    bob.name = "bob"
+    carol = MagicMock()
+    carol.name = "carol"
+    uow.profiles.list_profiles.return_value = [alice, bob, carol]
+    assert resolve_cron_profiles(s, uow) == ["alice", "bob"]
+
+    s2 = Settings(
+        _env_file=None,
+        data_dir=tmp_path,
+        sessions_dir=sessions,
+        parse_schedule_profile="alice",
+    )
+    uow.profiles.resolve_profile.return_value = "alice"
+    assert resolve_cron_profiles(s2, uow) == ["alice"]
+
+
+def test_effective_schedule_profile_default_is_all(tmp_path: Path):
+    path = tmp_path / "launch.json"
+    path.write_text(
+        json.dumps(
+            {
+                "site": "rabota.by",
+                "location": {"country": "Беларусь", "city": "Минск"},
+                "queries": ["Python developer"],
+                "schedule": {
+                    "enabled": True,
+                    "timezone": "Europe/Minsk",
+                    "times": ["00:00", "08:00"],
+                    "cron_job_rules": "1111",
+                    "email_report_after_run": True,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    s = Settings(_env_file=None, launch_path=path, parse_schedule_enabled=True)
+    sched = resolve_effective_parse_schedule(s)
+    assert sched["profile"] == "all"
+    assert sched["times_display"] == "00:00,08:00"

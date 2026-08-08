@@ -307,14 +307,14 @@ PDFs land in `data/reports/`. Manual: `GET /api/reports/{kind}.pdf`, `POST /api/
 |----------|----------|---------|---------|
 | `PARSE_SCHEDULE_ENABLED` | no | `false` | Scheduled parse (keep off locally unless you want it) |
 | `PARSE_SCHEDULE_TIMEZONE` | no | `Europe/Minsk` | Timezone |
-| `PARSE_SCHEDULE_TIMES` | no | `12:00,00:00` | `HH:MM` list |
-| `PARSE_SCHEDULE_PROFILE` | no | `default` | Profile |
+| `PARSE_SCHEDULE_TIMES` | no | `12:00,00:00` | Fallback `HH:MM` list (when launch has no `schedule`) |
+| `PARSE_SCHEDULE_PROFILE` | no | `all` | Cookie profile(s) for cron: `all` / `*` / empty = every profile with HH/LinkedIn sessions; else a single name |
 | `PARSE_EARLY_STOP_ENABLED` | no | `true` | Early-stop on consecutive fully-duplicate SERP pages (HH + LinkedIn) |
 | `PARSE_OLD_STREAK_STOP` | no | `0` | Optional item-level streak (0 = off) |
 | `PARSE_MAX_SERP_PAGES` | no | `20` | Max SERP pages per query |
 | `PARSE_DUP_PAGE_STOP` | no | `3` | Stop after N fully-duplicate pages |
 
-On tick: HH StartSearch and LinkedIn vacancy collect (when sessions exist), preferably in parallel. Duplicates become `filtered:duplicate`.
+On tick: for each selected cookie profile — HH StartSearch / Apply and LinkedIn vacancy/network (per `cron_job_rules` bitmask) when sessions exist; profiles run sequentially; email report (if enabled) is sent per profile after that profile finishes. Schedule times/timezone live once in `launch.json` for the whole app (not per browser profile). Duplicates become `filtered:duplicate`.
 
 #### SMTP alerts
 

@@ -3,15 +3,15 @@
   "short_name": "AutoApply",
   "icons": [
     {
-      "src": "/static/favicon-32.png?v=3",
-      "sizes": "32x32",
-      "type": "image/png",
+      "src": "/static/favicon.svg?v=4",
+      "sizes": "any",
+      "type": "image/svg+xml",
       "purpose": "any"
     },
     {
-      "src": "/static/favicon.svg?v=3",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/static/favicon-32.png?v=4",
+      "sizes": "32x32",
+      "type": "image/png",
       "purpose": "any"
     }
   ],
