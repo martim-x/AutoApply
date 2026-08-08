@@ -579,10 +579,53 @@
     };
   }
 
+  const FAVICON_COLORS = {
+    idle: "#8a938c",
+    warn: "#c9a227",
+    active: "#1f6b3a",
+    error: "#b32626",
+  };
+  let lastFaviconLight = null;
+  let statusPolledOnce = false;
+
+  function faviconDataUri(color) {
+    const svg =
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">` +
+      `<rect width="32" height="32" rx="8" fill="${color}"/>` +
+      `<circle cx="22" cy="16" r="5" fill="#fff"/>` +
+      `</svg>`;
+    return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  }
+
+  function setFaviconLight(light) {
+    const key = FAVICON_COLORS[light] ? light : "idle";
+    if (key === lastFaviconLight) return;
+    lastFaviconLight = key;
+    const href = faviconDataUri(FAVICON_COLORS[key]);
+    const links = document.querySelectorAll(
+      'link[rel="icon"], link[rel="shortcut icon"]'
+    );
+    if (!links.length) {
+      const link = document.createElement("link");
+      link.rel = "icon";
+      link.type = "image/svg+xml";
+      link.href = href;
+      document.head.appendChild(link);
+      return;
+    }
+    links.forEach((link) => {
+      link.type = "image/svg+xml";
+      link.removeAttribute("sizes");
+      link.href = href;
+    });
+  }
+
   function paintStatusPill(st) {
     if (!statusPill) return;
     const light = deriveLightState(workspace, st || cachedStatusSnapshot());
     statusPill.dataset.light = light;
+    // Gray until the first /api/status response (cached defaults look like "warn").
+    setFaviconLight(statusPolledOnce ? light : "idle");
     const stateLabel = t(`status.light.${light}`);
     statusPill.title = stateLabel;
     statusPill.setAttribute("aria-label", stateLabel);
@@ -815,6 +858,7 @@
     lastHasLiSession = !!st.has_linkedin_session;
     lastAlert = st.last_alert || null;
     lastRemoteBrowsers = st.remote_browsers || null;
+    statusPolledOnce = true;
     statusPill.dataset.status = status;
     statusLabel.textContent = statusDisplay(status);
     paintStatusPill(st);
@@ -2296,6 +2340,7 @@
   initLogFullscreen();
   initBackToTop();
   if (window.AA_I18N) window.AA_I18N.initLang();
+  setFaviconLight("idle");
   setStatusMessage(t("status.ready"));
 
   const logoutForm = $("logoutForm");
