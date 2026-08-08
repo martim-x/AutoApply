@@ -484,10 +484,34 @@
         </label>
         <fieldset class="launch-sched-bits">
           <legend data-i18n="launch.schedule.bits">Задачи (bitmask)</legend>
-          <label><input type="checkbox" id="schedBitHhSearch" checked /> HH search</label>
-          <label><input type="checkbox" id="schedBitHhApply" checked /> HH apply</label>
-          <label><input type="checkbox" id="schedBitLiVac" checked /> LI vacancies</label>
-          <label><input type="checkbox" id="schedBitLiNet" checked /> LI network</label>
+          <label class="launch-sched-bit">
+            <span class="launch-sched-bit-ord" data-i18n="launch.schedule.bit.ord1">1</span>
+            <span class="launch-sched-bit-ctrl">
+              <input type="checkbox" id="schedBitHhSearch" checked />
+              <span data-i18n="launch.schedule.bit.hh_search">HH search</span>
+            </span>
+          </label>
+          <label class="launch-sched-bit">
+            <span class="launch-sched-bit-ord" data-i18n="launch.schedule.bit.ord2">2</span>
+            <span class="launch-sched-bit-ctrl">
+              <input type="checkbox" id="schedBitHhApply" checked />
+              <span data-i18n="launch.schedule.bit.hh_apply">HH apply</span>
+            </span>
+          </label>
+          <label class="launch-sched-bit">
+            <span class="launch-sched-bit-ord" data-i18n="launch.schedule.bit.ord3">3</span>
+            <span class="launch-sched-bit-ctrl">
+              <input type="checkbox" id="schedBitLiVac" checked />
+              <span data-i18n="launch.schedule.bit.li_vac">LI vacancies</span>
+            </span>
+          </label>
+          <label class="launch-sched-bit">
+            <span class="launch-sched-bit-ord" data-i18n="launch.schedule.bit.ord4">4</span>
+            <span class="launch-sched-bit-ctrl">
+              <input type="checkbox" id="schedBitLiNet" checked />
+              <span data-i18n="launch.schedule.bit.li_net">LI network</span>
+            </span>
+          </label>
         </fieldset>
         <label class="launch-sched-row">
           <input type="checkbox" id="schedEmail" checked />

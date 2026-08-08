@@ -1096,13 +1096,36 @@ a:hover { text-decoration: underline; }
   border: 1px solid var(--line);
   border-radius: 8px;
   display: grid;
-  gap: var(--space-1);
-  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--space-2);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   font-size: var(--font-ui);
 }
 .launch-sched-bits legend {
   padding: 0 var(--space-1);
   font-weight: 600;
+}
+.launch-sched-bit {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+.launch-sched-bit-ord {
+  color: var(--muted);
+  font-size: var(--font-tiny);
+  font-family: var(--mono);
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+.launch-sched-bit-ctrl {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.launch-sched-bit-ctrl span {
+  overflow-wrap: anywhere;
 }
 .launch-targets-list {
   display: grid;
@@ -1136,6 +1159,9 @@ a:hover { text-decoration: underline; }
   margin-top: var(--space-1);
 }
 @media (max-width: 640px) {
+  .launch-sched-bits {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .launch-target-row {
     grid-template-columns: 1fr 1fr;
   }
