@@ -6,10 +6,23 @@
     "strict": true
   },
   "queries": [
-    "python-разработчик",
-    "python-developer",
-    "python разработчик",
-    "python developer"
+    "Python разработчик",
+    "Python разработчик backend",
+    "Python разработчик fastapi",
+    "Python разработчик django",
+    "Python разработчик middle",
+    "Python разработчик developer",
+    "Backend python",
+    "Backend python developer",
+    "Backend python django",
+    "Backend python разработчик",
+    "Backend python fastapi",
+    "Python developer",
+    "Python developer fastapi",
+    "Python developer middle",
+    "Python developer backend",
+    "Python developer django",
+    "Python develop"
   ],
   "require_remote_or_hybrid": true,
   "skip_gov": true,
@@ -20,5 +33,12 @@
   "salary_min_usd": 2200,
   "salary_max_usd": 2800,
   "salary_strict": false,
-  "level": "middle+"
+  "level": "middle+",
+  "schedule": {
+    "enabled": true,
+    "timezone": "Europe/Minsk",
+    "times": ["00:00", "12:00"],
+    "cron_job_rules": "1111",
+    "email_report_after_run": true
+  }
 }

@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 from app.domain.ports import UnitOfWork
 from app.infrastructure.settings import Settings
+from app.infrastructure.timefmt import format_ts
 
 ReportKind = Literal["work", "queue", "launch", "linkedin"]
 REPORT_KINDS: tuple[str, ...] = ("work", "queue", "launch", "linkedin")
@@ -29,10 +30,13 @@ class ReportPayload:
     app_name: str
     generated_at: float
     themes: list[ReportTheme] = field(default_factory=list)
+    timezone: str = "Europe/Minsk"
 
     @property
     def generated_label(self) -> str:
-        return time.strftime("%Y-%m-%d %H:%M", time.localtime(self.generated_at))
+        return format_ts(
+            self.generated_at, tz_name=self.timezone, fmt="%Y-%m-%d %H:%M"
+        )
 
 
 def normalize_kind(kind: str) -> str:
@@ -48,18 +52,21 @@ def assemble_report(
     kind: str,
     profile: str = "default",
 ) -> ReportPayload:
+    from app.infrastructure.timefmt import display_timezone_name
+
     kind = normalize_kind(kind)
     profile = uow.profiles.resolve_profile(profile)
     now = time.time()
     app_name = settings.app_name or "auto-apply-app"
+    tz_name = display_timezone_name(settings)
 
     if kind == "work":
-        return _work_report(uow, settings, profile, app_name, now)
+        return _work_report(uow, settings, profile, app_name, now, tz_name)
     if kind == "queue":
-        return _queue_report(uow, settings, profile, app_name, now)
+        return _queue_report(uow, settings, profile, app_name, now, tz_name)
     if kind == "linkedin":
-        return _linkedin_report(uow, settings, profile, app_name, now)
-    return _launch_report(uow, settings, profile, app_name, now)
+        return _linkedin_report(uow, settings, profile, app_name, now, tz_name)
+    return _launch_report(uow, settings, profile, app_name, now, tz_name)
 
 
 def _enum_val(v: Any) -> str:
@@ -72,6 +79,7 @@ def _work_report(
     profile: str,
     app_name: str,
     now: float,
+    tz_name: str = "Europe/Minsk",
 ) -> ReportPayload:
     stats = uow.stats(profile)
     job = uow.jobs.get_status(profile)
@@ -101,8 +109,8 @@ def _work_report(
     period_label = "всё время в БД"
     if period_from:
         period_label = (
-            f"{time.strftime('%Y-%m-%d', time.localtime(period_from))}"
-            f" — {time.strftime('%Y-%m-%d', time.localtime(now))}"
+            f"{format_ts(period_from, tz_name=tz_name, fmt='%Y-%m-%d')}"
+            f" — {format_ts(now, tz_name=tz_name, fmt='%Y-%m-%d')}"
         )
 
     launch_summary = _launch_public_lines(settings)
@@ -189,11 +197,7 @@ def _work_report(
                     "title": "Последние события",
                     "items": [
                         {
-                            "when": time.strftime(
-                                "%Y-%m-%d %H:%M:%S", time.localtime(e.ts)
-                            )
-                            if e.ts
-                            else "",
+                            "when": format_ts(e.ts, tz_name=tz_name),
                             "level": e.level,
                             "event": e.event,
                             "message": (e.message or "")[:160],
@@ -219,6 +223,7 @@ def _work_report(
         app_name=app_name,
         generated_at=now,
         themes=themes,
+        timezone=tz_name,
     )
 
 
@@ -228,6 +233,7 @@ def _queue_report(
     profile: str,
     app_name: str,
     now: float,
+    tz_name: str = "Europe/Minsk",
 ) -> ReportPayload:
     queued = uow.vacancies.next_queued(profile, limit=100)
     stats = uow.stats(profile)
@@ -276,6 +282,7 @@ def _queue_report(
         app_name=app_name,
         generated_at=now,
         themes=themes,
+        timezone=tz_name,
     )
 
 
@@ -285,6 +292,7 @@ def _launch_report(
     profile: str,
     app_name: str,
     now: float,
+    tz_name: str = "Europe/Minsk",
 ) -> ReportPayload:
     from app.domain.launch_profile import load_launch_profile
 
@@ -361,6 +369,7 @@ def _launch_report(
         app_name=app_name,
         generated_at=now,
         themes=themes,
+        timezone=tz_name,
     )
 
 
@@ -370,6 +379,7 @@ def _linkedin_report(
     profile: str,
     app_name: str,
     now: float,
+    tz_name: str = "Europe/Minsk",
 ) -> ReportPayload:
     li_stats = uow.linkedin_contacts.stats(profile)
     vac_stats = uow.linkedin_vacancies.stats(profile)
@@ -451,6 +461,7 @@ def _linkedin_report(
         app_name=app_name,
         generated_at=now,
         themes=themes,
+        timezone=tz_name,
     )
 
 

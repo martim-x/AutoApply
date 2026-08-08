@@ -217,8 +217,8 @@ Source of truth: [`.env.example`](.env.example) and `app/infrastructure/settings
 | `SESSIONS_DIR` | no | `./data/sessions` | Playwright cookies (optional to set) |
 | `LETTER_PATH` | no | `./letters` | Letter file or directory of `*.txt` |
 | `LETTER_STYLE` | no | `rotate` | `rotate` / `impact` / `responsibility` / `project` |
-| `LAUNCH_PATH` | no | `./config/launch.json` | HH launch profile |
-| `LINKEDIN_LAUNCH_PATH` | no | `./config/linkedin.launch.json` | LinkedIn launch |
+| `LAUNCH_PATH` | no | `./data/config/launch.json` | HH launch profile (on volume; Railway: `/app/data/config/launch.json`) |
+| `LINKEDIN_LAUNCH_PATH` | no | `./data/config/linkedin.launch.json` | LinkedIn launch |
 
 #### Database
 

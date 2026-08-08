@@ -541,8 +541,8 @@ class PlaywrightBrowserGateway:
                     pass
                 else:
                     msg = (
-                        f"Найдено {found}, в очереди подходящих: {kept} "
-                        f"(лимит поиска {vacancy_limit})"
+                        f"SERP найдено: {found}; оставлено в очереди: {kept}; "
+                        f"лимит поиска: {vacancy_limit}"
                     )
                     status = JobStatus.IDLE if stop_flag.stopped else JobStatus.DONE
                     if stop_flag.stopped and not aborted_blocker:

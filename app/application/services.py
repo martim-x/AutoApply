@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 from app.application.alerts import get_alert_service
@@ -351,17 +350,14 @@ class AppService:
         entries = self.uow.journal.recent(
             self._profile(profile), limit=limit, service=svc
         )
+        from app.infrastructure.timefmt import format_ts
+
         result = []
         for e in entries:
-            when = (
-                time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(e.ts))
-                if e.ts
-                else ""
-            )
             result.append(
                 {
                     "id": e.id,
-                    "when": when,
+                    "when": format_ts(e.ts, settings=self.settings),
                     "level": e.level,
                     "event": e.event,
                     "message": e.message,

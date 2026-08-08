@@ -22,8 +22,8 @@ UI: **http://127.0.0.1:8080**
 | Что | Где |
 |-----|-----|
 | Порт | `8080` (или `PORT` на хосте) |
-| Данные | том `./data` → `/app/data` (SQLite, `sessions/`, `reports/`) |
-| Конфиг | `./config` → `/app/config` (`launch.json`, `linkedin.launch.json`) |
+| Данные | том `./data` → `/app/data` (SQLite, `sessions/`, `reports/`, `config/launch*.json`) |
+| Конфиг образа | `./config` → `/app/config` (`areas.json`, `weights.json`, `*.example.json`; compose также пишет сюда launch через `LAUNCH_PATH`) |
 | Env | `.env` смонтирован (удобно для `/admin`) |
 
 В образе по умолчанию: `HEADLESS=true`, `ENABLE_REMOTE_BROWSER=true`, `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`.
@@ -55,6 +55,9 @@ ADMIN_SECRET=long_random_string   # ./scripts/gen_admin_secret.sh
 ```env
 DATA_DIR=/app/data
 DATABASE_URL=sqlite:////app/data/auto_apply_app.sqlite
+# Persist UI-saved launch on the volume (new default if unset):
+LAUNCH_PATH=/app/data/config/launch.json
+LINKEDIN_LAUNCH_PATH=/app/data/config/linkedin.launch.json
 REPORT_SCHEDULE_ENABLED=true
 REPORT_SCHEDULE_TIMEZONE=Europe/Minsk
 REPORT_SCHEDULE_HOUR=4
@@ -62,22 +65,22 @@ REPORT_SCHEDULE_MINUTE=0
 REPORT_SCHEDULE_KIND=work
 REPORT_SCHEDULE_PROFILE=default
 
-# Vacancy parse twice daily (noon + midnight, Europe/Minsk)
+# Kill-switch for cron jobs; times/timezone/bitmask → launch.json → schedule (UI Criteria)
 PARSE_SCHEDULE_ENABLED=true
-PARSE_SCHEDULE_TIMEZONE=Europe/Minsk
-PARSE_SCHEDULE_TIMES=12:00,00:00
 PARSE_SCHEDULE_PROFILE=default
 PARSE_EARLY_STOP_ENABLED=true
 PARSE_OLD_STREAK_STOP=0
 PARSE_MAX_SERP_PAGES=20
 PARSE_DUP_PAGE_STOP=3
 
-# Same SMTP channel delivers scheduled report HTML + PDF
+# Same SMTP channel: daily PDF + optional email after each parse cron (schedule.email_report_after_run)
 ALERT_SMTP_ENABLED=true
 # ALERT_SMTP_HOST / PORT / USER / PASSWORD / FROM / TO …
 ```
 
-Парсинг по расписанию (тот же процесс uvicorn): при наличии сессий запускает **HH search и LinkedIn vacancy collect параллельно** (два Chromium, если оба слота свободны). Дубликаты по URL/`vacancy_id` пропускаются; при сортировке по дате полностью дублирующие страницы SERP пропускаются, early-stop — после `PARSE_DUP_PAGE_STOP` таких страниц подряд (лимит `PARSE_MAX_SERP_PAGES`).
+Парсинг по расписанию (тот же процесс uvicorn): читает `launch.json` → `schedule` (timezone, times, `cron_job_rules` bitmask: HH search / HH apply / LI vacancies / LI network). `PARSE_SCHEDULE_ENABLED=false` — kill-switch. При наличии сессий волны: (1) search + LI vacancies, (2) apply + LI network. Дубликаты по URL/`vacancy_id` пропускаются; early-stop — после `PARSE_DUP_PAGE_STOP` полностью дублирующих страниц SERP (лимит `PARSE_MAX_SERP_PAGES`).
+
+При первом старте, если `/app/data/config/launch.json` пуст, а старый `/app/config/launch.json` есть — файл копируется на volume.
 
 Для smoke: временно `PARSE_SCHEDULE_TIMES=<HH:MM ≈ now+5>` и `REPORT_SCHEDULE_HOUR/MINUTE` на 1–3 мин позже; после проверки вернуть `12:00,00:00` / `04:00`. Подробнее — [getting-started.md](./getting-started.md).
 
@@ -117,5 +120,11 @@ Railway `PORT` подхватывается CMD: `uvicorn … --port ${PORT:-808
 | `sessions/<profile>.storage.json` | cookies rabota/hh |
 | `sessions/<profile>.linkedin.storage.json` | cookies LinkedIn |
 | `reports/*.pdf` | сохранённые / по расписанию PDF |
+| `config/launch.json` | HH критерии + `schedule` (персистятся на volume; UI Save) |
+| `config/linkedin.launch.json` | LinkedIn критерии |
+
+В образе остаются `config/areas.json` и `config/weights.json` (не на volume).
+
+> **Multi-country stub:** поле `targets[]` (несколько site/location в одном launch) задумано, но не реализовано — один `site` + `location` на файл.
 
 См. также [linkedin.md](./linkedin.md), [getting-started.md](./getting-started.md).

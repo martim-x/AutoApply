@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import shutil
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -10,6 +12,17 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parents[2]
+log = logging.getLogger(__name__)
+
+# Default queries (comma-separated) — keep in sync with HH_LAUNCH_DEFAULTS.
+_DEFAULT_SEARCH_QUERIES = (
+    "Python разработчик,Python разработчик backend,Python разработчик fastapi,"
+    "Python разработчик django,Python разработчик middle,Python разработчик developer,"
+    "Backend python,Backend python developer,Backend python django,"
+    "Backend python разработчик,Backend python fastapi,"
+    "Python developer,Python developer fastapi,Python developer middle,"
+    "Python developer backend,Python developer django,Python develop"
+)
 
 
 class Settings(BaseSettings):
@@ -51,17 +64,17 @@ class Settings(BaseSettings):
     letter_path: Path = Field(default=ROOT / "letters")
     # rotate | impact | responsibility | project | filename stem
     letter_style: str = "rotate"
-    launch_path: Path = Field(default=ROOT / "config" / "launch.json")
+    # Persist under DATA_DIR so Railway volume (/app/data) keeps UI saves.
+    # docker-compose may still point at /app/config via LAUNCH_PATH.
+    launch_path: Path = Field(default=ROOT / "data" / "config" / "launch.json")
     linkedin_launch_path: Path = Field(
-        default=ROOT / "config" / "linkedin.launch.json"
+        default=ROOT / "data" / "config" / "linkedin.launch.json"
     )
 
-    # Site / search (defaults; override via config/launch.json)
+    # Site / search (defaults; override via launch.json)
     base_url: str = "https://rabota.by"
     search_area: str = "16"  # BY / Minsk country fallback
-    search_queries: str = (
-        "python-разработчик,python-developer,python разработчик,python developer"
-    )
+    search_queries: str = _DEFAULT_SEARCH_QUERIES
     apply_limit: int = 30
     vacancy_limit: int = 30
     dry_run: bool = False
@@ -212,10 +225,46 @@ class Settings(BaseSettings):
     def reports_dir(self) -> Path:
         return self.data_dir / "reports"
 
+    @property
+    def config_dir(self) -> Path:
+        """Writable launch configs on the data volume (areas/weights stay in image)."""
+        return self.data_dir / "config"
+
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.config_dir.mkdir(parents=True, exist_ok=True)
         self.resolved_sessions_dir.mkdir(parents=True, exist_ok=True)
         self.reports_dir.mkdir(parents=True, exist_ok=True)
+        self.migrate_launch_configs()
+
+    def migrate_launch_configs(self) -> list[str]:
+        """
+        Copy legacy ROOT/config/*.launch.json → DATA_DIR/config/ when the
+        new path is missing or empty (Railway redeploy safety).
+        """
+        notes: list[str] = []
+        legacy = ROOT / "config"
+        pairs = (
+            (legacy / "launch.json", self.launch_path),
+            (legacy / "linkedin.launch.json", self.linkedin_launch_path),
+        )
+        for old, new in pairs:
+            try:
+                if new.exists() and new.stat().st_size > 0:
+                    continue
+                if not old.is_file() or old.stat().st_size == 0:
+                    continue
+                # Do not overwrite an explicit path that already has content.
+                if new.exists() and new.resolve() == old.resolve():
+                    continue
+                new.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(old, new)
+                msg = f"migrated launch config {old} → {new}"
+                notes.append(msg)
+                log.info(msg)
+            except OSError as e:
+                log.warning("launch config migration failed %s → %s: %s", old, new, e)
+        return notes
 
     def sqlite_path(self) -> Path | None:
         url = self.database_url

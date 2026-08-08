@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.domain.config_defaults import ConfigLoadResult, deep_merge_defaults
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_LINKEDIN_LAUNCH_PATH = ROOT / "config" / "linkedin.launch.json"
+DEFAULT_LINKEDIN_LAUNCH_PATH = ROOT / "data" / "config" / "linkedin.launch.json"
 EXAMPLE_LINKEDIN_LAUNCH_PATH = ROOT / "config" / "linkedin.launch.example.json"
 
 LINKEDIN_BASE = "https://www.linkedin.com"

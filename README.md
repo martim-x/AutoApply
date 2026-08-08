@@ -217,8 +217,8 @@ docker compose up --build
 | `SESSIONS_DIR` | нет | `./data/sessions` | Cookies Playwright (можно не задавать) |
 | `LETTER_PATH` | нет | `./letters` | Файл или каталог `*.txt` писем |
 | `LETTER_STYLE` | нет | `rotate` | `rotate` / `impact` / `responsibility` / `project` |
-| `LAUNCH_PATH` | нет | `./config/launch.json` | HH launch-профиль |
-| `LINKEDIN_LAUNCH_PATH` | нет | `./config/linkedin.launch.json` | LinkedIn launch |
+| `LAUNCH_PATH` | нет | `./data/config/launch.json` | HH launch-профиль (на volume; Railway: `/app/data/config/launch.json`) |
+| `LINKEDIN_LAUNCH_PATH` | нет | `./data/config/linkedin.launch.json` | LinkedIn launch |
 
 #### База данных
 

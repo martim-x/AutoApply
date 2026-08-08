@@ -525,7 +525,10 @@ class LinkedInBrowserGateway:
                 except Exception:
                     pass
 
-                msg = f"LinkedIn vacancies saved={saved}"
+                msg = (
+                    f"LinkedIn SERP: сохранено в очередь {saved} "
+                    f"(лимит {launch.vacancy_limit})"
+                )
                 self._log(profile, "linkedin_vacancies_done", msg)
                 current = uow.jobs.get_status(profile)
                 if current.status != JobStatus.WAITING_USER:

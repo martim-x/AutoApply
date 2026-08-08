@@ -12,21 +12,37 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 ROOT = Path(__file__).resolve().parents[2]
 AREAS_PATH = ROOT / "config" / "areas.json"
-DEFAULT_LAUNCH_PATH = ROOT / "config" / "launch.json"
+# Default under data/ so Railway volume persists UI saves; override via LAUNCH_PATH.
+DEFAULT_LAUNCH_PATH = ROOT / "data" / "config" / "launch.json"
 EXAMPLE_LAUNCH_PATH = ROOT / "config" / "launch.example.json"
 
 SiteName = Literal["rabota.by", "hh.ru"]
+
+HH_DEFAULT_QUERIES: list[str] = [
+    "Python разработчик",
+    "Python разработчик backend",
+    "Python разработчик fastapi",
+    "Python разработчик django",
+    "Python разработчик middle",
+    "Python разработчик developer",
+    "Backend python",
+    "Backend python developer",
+    "Backend python django",
+    "Backend python разработчик",
+    "Backend python fastapi",
+    "Python developer",
+    "Python developer fastapi",
+    "Python developer middle",
+    "Python developer backend",
+    "Python developer django",
+    "Python develop",
+]
 
 # Soft defaults when keys are missing (file may be partial).
 HH_LAUNCH_DEFAULTS: dict[str, Any] = {
     "site": "rabota.by",
     "location": {"country": "Беларусь", "city": "Минск", "strict": True},
-    "queries": [
-        "python-разработчик",
-        "python-developer",
-        "python разработчик",
-        "python developer",
-    ],
+    "queries": list(HH_DEFAULT_QUERIES),
     "require_remote_or_hybrid": True,
     "skip_gov": True,
     "require_python_keywords": True,
@@ -37,6 +53,15 @@ HH_LAUNCH_DEFAULTS: dict[str, Any] = {
     "salary_max_usd": 2800,
     "salary_strict": False,
     "level": "middle+",
+    "schedule": {
+        "enabled": True,
+        "timezone": "Europe/Minsk",
+        "times": ["00:00", "12:00"],
+        "cron_job_rules": "1111",
+        "email_report_after_run": True,
+    },
+    # Future multi-country: list of {site, location, queries?} — not implemented yet.
+    # "targets": [],
 }
 
 # Strict text format for humans (parsed → JSON):
@@ -55,6 +80,11 @@ HH_LAUNCH_DEFAULTS: dict[str, Any] = {
 # salary_max_usd: 2800
 # salary_strict: false
 # level: middle+
+# schedule_enabled: true
+# schedule_timezone: Europe/Minsk
+# schedule_times: 00:00, 12:00
+# cron_job_rules: 1111
+# email_report_after_run: true
 
 STRICT_TEXT_KEYS = {
     "site",
@@ -72,6 +102,11 @@ STRICT_TEXT_KEYS = {
     "salary_max_usd",
     "salary_strict",
     "level",
+    "schedule_enabled",
+    "schedule_timezone",
+    "schedule_times",
+    "cron_job_rules",
+    "email_report_after_run",
 }
 
 
@@ -86,8 +121,78 @@ class LocationPref(BaseModel):
     country_aliases: list[str] = Field(default_factory=list)
 
 
+class SchedulePref(BaseModel):
+    """
+    Cron-like parse schedule stored in launch.json (editable from UI).
+
+    cron_job_rules bitmask (4 chars, left→right):
+      0: HH search, 1: HH apply, 2: LI vacancies, 3: LI network
+    Example "1111" = all four; "1010" = HH search + LI vacancies only.
+    """
+
+    enabled: bool = True
+    timezone: str = "Europe/Minsk"
+    times: list[str] = Field(default_factory=lambda: ["00:00", "12:00"])
+    cron_job_rules: str = "1111"
+    email_report_after_run: bool = True
+
+    @field_validator("timezone", mode="before")
+    @classmethod
+    def _norm_tz(cls, v: Any) -> str:
+        s = str(v or "Europe/Minsk").strip() or "Europe/Minsk"
+        return s
+
+    @field_validator("times", mode="before")
+    @classmethod
+    def _norm_times(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            parts = re.split(r"[,;\s]+", v)
+        elif isinstance(v, list):
+            parts = v
+        else:
+            parts = ["00:00", "12:00"]
+        out: list[str] = []
+        seen: set[str] = set()
+        for p in parts:
+            token = str(p).strip()
+            if not token:
+                continue
+            if ":" not in token and token.isdigit():
+                token = f"{int(token):02d}:00"
+            # Normalize HH:MM
+            try:
+                hs, ms = token.split(":", 1)
+                hour = int(hs)
+                minute = int(ms)
+                if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                    continue
+                token = f"{hour:02d}:{minute:02d}"
+            except ValueError:
+                continue
+            if token in seen:
+                continue
+            seen.add(token)
+            out.append(token)
+        return out or ["00:00", "12:00"]
+
+    @field_validator("cron_job_rules", mode="before")
+    @classmethod
+    def _norm_rules(cls, v: Any) -> str:
+        raw = str(v if v is not None else "1111").strip()
+        bits = "".join(c for c in raw if c in "01")
+        if not bits:
+            bits = "1111"
+        return (bits + "0000")[:4]
+
+    def job_enabled(self, index: int) -> bool:
+        rules = self.cron_job_rules or "0000"
+        if index < 0 or index >= len(rules):
+            return False
+        return rules[index] == "1"
+
+
 class LaunchProfile(BaseModel):
-    """Параметры одного поискового прогона (файл config/launch.json)."""
+    """Параметры одного поискового прогона (файл launch.json)."""
 
     site: SiteName
     location: LocationPref
@@ -105,6 +210,7 @@ class LaunchProfile(BaseModel):
     salary_max_usd: int | None = Field(default=2800, ge=0, le=50_000)
     salary_strict: bool = False  # true → filter out clearly below min
     level: str = Field(default="middle+")
+    schedule: SchedulePref = Field(default_factory=SchedulePref)
 
     @field_validator("queries", mode="before")
     @classmethod
@@ -323,6 +429,20 @@ def parse_strict_text(text: str) -> dict[str, Any]:
         payload["salary_strict"] = parse_bool(raw["salary_strict"])
     if "level" in raw:
         payload["level"] = raw["level"]
+
+    schedule: dict[str, Any] = {}
+    if "schedule_enabled" in raw:
+        schedule["enabled"] = parse_bool(raw["schedule_enabled"])
+    if "schedule_timezone" in raw:
+        schedule["timezone"] = raw["schedule_timezone"]
+    if "schedule_times" in raw:
+        schedule["times"] = raw["schedule_times"]
+    if "cron_job_rules" in raw:
+        schedule["cron_job_rules"] = raw["cron_job_rules"]
+    if "email_report_after_run" in raw:
+        schedule["email_report_after_run"] = parse_bool(raw["email_report_after_run"])
+    if schedule:
+        payload["schedule"] = schedule
     return payload
 
 
@@ -336,7 +456,9 @@ def parse_and_validate_text(text: str) -> LaunchProfile:
 
 def launch_to_strict_text(profile: LaunchProfile) -> str:
     loc = profile.location
+    sched = profile.schedule
     queries = ", ".join(profile.queries)
+    times = ", ".join(sched.times)
     lines = [
         f"site: {profile.site}",
         f"country: {loc.country}",
@@ -353,6 +475,11 @@ def launch_to_strict_text(profile: LaunchProfile) -> str:
         f"salary_max_usd: {profile.salary_max_usd if profile.salary_max_usd is not None else ''}",
         f"salary_strict: {str(profile.salary_strict).lower()}",
         f"level: {profile.level}",
+        f"schedule_enabled: {str(sched.enabled).lower()}",
+        f"schedule_timezone: {sched.timezone}",
+        f"schedule_times: {times}",
+        f"cron_job_rules: {sched.cron_job_rules}",
+        f"email_report_after_run: {str(sched.email_report_after_run).lower()}",
         "",
     ]
     return "\n".join(lines)
