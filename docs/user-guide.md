@@ -5,8 +5,9 @@
 См. также: [getting-started.md](./getting-started.md) · [priorities.md](./priorities.md) · [linkedin.md](./linkedin.md) · [docker-railway.md](./docker-railway.md).
 
 В шапке — переключатель окружения **rabota.by / hh** ↔ **LinkedIn**.  
-PDF по расписанию: env `REPORT_SCHEDULE_*` (подсказка в блоке «Отчёт»).  
-Парсинг вакансий 2×/день: env `PARSE_SCHEDULE_*` (12:00 и 00:00, timezone; HH + LinkedIn при наличии сессий).
+PDF по расписанию: env `REPORT_SCHEDULE_*` (подсказка в блоке «Отчёт») — при `ALERT_SMTP_*` письмо HTML + PDF.  
+Парсинг вакансий 2×/день: env `PARSE_SCHEDULE_*` (`PARSE_SCHEDULE_TIMES=12:00,00:00`, timezone; HH + LinkedIn при наличии сессий).  
+Smoke: один `HH:MM` ≈ now+5 в `PARSE_SCHEDULE_TIMES` и соседний `REPORT_SCHEDULE_HOUR/MINUTE` — см. [getting-started.md](./getting-started.md).
 
 ---
 
@@ -74,6 +75,9 @@ level: middle+
 ```
 
 Под полем — краткая meta: site · город · area · level · вилка · число queries.
+
+**Поиск по всей стране:** `strict: false` — SERP на `country_area_id` (Беларусь → `16`), а не только город.  
+`city` остаётся в тексте (каталог/scoring). Несколько городов в одном launch — пока нет.
 
 **Частые ошибки валидации**
 

@@ -706,7 +706,12 @@ class AppService:
             return []
 
     def run_report_now(
-        self, *, kind: str = "work", profile: str = "default", scheduled: bool = False
+        self,
+        *,
+        kind: str = "work",
+        profile: str = "default",
+        scheduled: bool = False,
+        email: bool | None = None,
     ) -> dict[str, Any]:
         from app.infrastructure.scheduler import generate_scheduled_report
 
@@ -716,6 +721,7 @@ class AppService:
             kind=kind,
             profile=self._profile(profile),
             scheduled=scheduled,
+            email=email,
         )
 
     def _profile(self, profile: str | None = None) -> str:

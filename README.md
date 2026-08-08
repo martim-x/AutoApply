@@ -377,7 +377,7 @@ level: middle+
 |------|--------|
 | `site` | `rabota.by` или `hh.ru` (страна должна совпасть с каталогом) |
 | `country` / `city` | Строго из `config/areas.json` → параметр `area=` |
-| `strict` | Резать вакансии с другим городом |
+| `strict` | `true` — город + фильтр чужого города; `false` — **вся страна** (Беларусь `area=16`) |
 | `queries` | Поисковые строки SERP |
 | `remote_or_hybrid` | Обязательный remote или hybrid |
 | `skip_gov` | Резать gov-маркеры и `*.gov.*` |
@@ -388,6 +388,8 @@ level: middle+
 | `level` | Целевой уровень для сигналов scoring |
 
 После правок в UI: **Проверить** → **Сохранить фильтры**.
+
+Поиск по всей стране: `strict: false` (+ `country: Беларусь` → SERP `area=16`). Несколько городов в одном launch — пока нет.
 
 Для hh.ru:
 
@@ -525,7 +527,9 @@ ADMIN_SECRET=   # вывод ./scripts/gen_admin_secret.sh
 AUTH_COOKIE_SECURE=true
 ```
 
-3. Полезные переменные расписаний (после сохранения сессий):
+3. Полезные переменные расписаний (после сохранения сессий).  
+   PDF-отчёт по слоту уходит на почту через **тот же** `ALERT_SMTP_*` (HTML + PDF).  
+   Для smoke можно временно поставить один `HH:MM` ≈ now+5 в `PARSE_SCHEDULE_TIMES` и соседние `REPORT_SCHEDULE_HOUR/MINUTE` — см. [docs/getting-started.md](docs/getting-started.md).
 
 ```env
 DATA_DIR=/app/data
@@ -537,6 +541,8 @@ REPORT_SCHEDULE_MINUTE=0
 PARSE_SCHEDULE_ENABLED=true
 PARSE_SCHEDULE_TIMEZONE=Europe/Minsk
 PARSE_SCHEDULE_TIMES=12:00,00:00
+ALERT_SMTP_ENABLED=true
+# … ALERT_SMTP_HOST / TO / USER / PASSWORD …
 ```
 
 4. Volume на `/app/data` (SQLite, sessions, reports). Без volume данные пропадут после редеплоя.

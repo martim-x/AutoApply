@@ -377,7 +377,7 @@ level: middle+
 |-------|---------|
 | `site` | `rabota.by` or `hh.ru` (country must match the catalog) |
 | `country` / `city` | Strictly from `config/areas.json` → `area=` |
-| `strict` | Drop vacancies from another city |
+| `strict` | `true` — city SERP + drop other cities; `false` — **whole country** (Belarus `area=16`) |
 | `queries` | SERP query strings |
 | `remote_or_hybrid` | Require remote or hybrid |
 | `skip_gov` | Drop gov markers and `*.gov.*` |
@@ -388,6 +388,8 @@ level: middle+
 | `level` | Target level for scoring signals |
 
 After UI edits: **Validate** → **Save filters**.
+
+Country-wide search: `strict: false` (+ `country: Беларусь` → SERP `area=16`). Multi-city list in one launch is not supported yet.
 
 For hh.ru:
 
@@ -525,7 +527,9 @@ ADMIN_SECRET=   # output of ./scripts/gen_admin_secret.sh
 AUTH_COOKIE_SECURE=true
 ```
 
-3. Useful schedule variables (after sessions are saved):
+3. Useful schedule variables (after sessions are saved).  
+   Scheduled PDF reports reuse **ALERT_SMTP_*** (HTML body + PDF attachment).  
+   Smoke: one near-term `HH:MM` in `PARSE_SCHEDULE_TIMES` — see [docs/getting-started.md](docs/getting-started.md).
 
 ```env
 DATA_DIR=/app/data
@@ -537,6 +541,7 @@ REPORT_SCHEDULE_MINUTE=0
 PARSE_SCHEDULE_ENABLED=true
 PARSE_SCHEDULE_TIMEZONE=Europe/Minsk
 PARSE_SCHEDULE_TIMES=12:00,00:00
+ALERT_SMTP_ENABLED=true
 ```
 
 4. Volume on `/app/data` (SQLite, sessions, reports). Without a volume, data disappears on redeploy.

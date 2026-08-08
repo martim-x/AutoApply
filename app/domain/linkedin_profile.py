@@ -52,7 +52,7 @@ class LinkedInLaunchProfile(BaseModel):
         default_factory=lambda: list(LINKEDIN_LAUNCH_DEFAULTS["vacancy_queries"])
     )
     connect_limit: int = Field(default=15, ge=1, le=80)
-    vacancy_limit: int = Field(default=40, ge=1, le=200)
+    vacancy_limit: int = Field(default=40, ge=1, le=100_000)
     max_profiles_per_query: int = Field(default=10, ge=1, le=40)
     min_action_interval: float = Field(default=8.0, ge=3.0, le=120.0)
     after_connect_delay: float = Field(default=14.0, ge=5.0, le=180.0)

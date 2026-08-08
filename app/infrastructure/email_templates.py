@@ -354,3 +354,277 @@ def render_alert_email(
         details=details,
     )
     return plain, html_body
+
+
+# Category colors for report HTML / PDF polish hints.
+_CATEGORY_COLORS = {
+    "HIGH": ("#1a7a38", "#d8eedf"),
+    "MEDIUM": ("#b8860b", "#f7ecd2"),
+    "LOW": ("#5a635c", "#eceeea"),
+}
+
+
+def _report_stat_rows(payload: Any) -> list[tuple[str, str, str | None]]:
+    """
+    Flatten ReportPayload kv blocks into (label, value, category_hint).
+    category_hint is HIGH/MEDIUM/LOW when the label matches.
+    """
+    rows: list[tuple[str, str, str | None]] = []
+    themes = getattr(payload, "themes", None) or []
+    for theme in themes:
+        for block in getattr(theme, "blocks", None) or []:
+            if (block or {}).get("type") != "kv":
+                continue
+            for key, value in block.get("rows") or []:
+                label = str(key)
+                val = str(value)
+                hint = label.upper() if label.upper() in _CATEGORY_COLORS else None
+                rows.append((label, val, hint))
+    return rows
+
+
+def render_plain_report(
+    payload: Any,
+    *,
+    pdf_name: str | None = None,
+) -> str:
+    title = getattr(payload, "title", None) or "Отчёт auto-apply-app"
+    profile = getattr(payload, "profile", None) or "default"
+    kind = getattr(payload, "kind", None) or ""
+    when = ""
+    if hasattr(payload, "generated_label"):
+        when = payload.generated_label
+    lines = [
+        "auto-apply-app",
+        str(title),
+        "",
+        f"Профиль: {profile}",
+        f"Тип: {kind}",
+    ]
+    if when:
+        lines.append(f"Сформирован: {when}")
+    rows = _report_stat_rows(payload)
+    if rows:
+        lines.append("")
+        lines.append("Статистика:")
+        for label, val, _ in rows[:24]:
+            lines.append(f"  {label}: {val}")
+    if pdf_name:
+        lines.extend(["", f"Вложение: {pdf_name}"])
+    lines.extend(["", "— auto-apply-app"])
+    return "\n".join(lines)
+
+
+def render_html_report(
+    payload: Any,
+    *,
+    pdf_name: str | None = None,
+) -> str:
+    """
+    Inline-friendly HTML report page (stats with bold/color accents).
+    Matches alert palette; PDF is expected as a separate attachment.
+    """
+    L, D = LIGHT, DARK
+    title = str(getattr(payload, "title", None) or "Отчёт auto-apply-app")
+    profile = str(getattr(payload, "profile", None) or "default")
+    kind = str(getattr(payload, "kind", None) or "")
+    when = ""
+    if hasattr(payload, "generated_label"):
+        when = str(payload.generated_label)
+
+    rows = _report_stat_rows(payload)
+    stats_html = ""
+    if rows:
+        items: list[str] = []
+        for label, val, hint in rows[:28]:
+            accent = L["text"]
+            bg = "transparent"
+            if hint and hint in _CATEGORY_COLORS:
+                accent, bg = _CATEGORY_COLORS[hint]
+                # Use light palette; dark media query overrides below.
+            items.append(
+                "<tr>"
+                f'<td style="padding:8px 12px;color:{L["muted"]};font-size:13px;'
+                f'vertical-align:top;">{escape_html(label)}</td>'
+                f'<td style="padding:8px 12px;font-size:15px;font-weight:700;'
+                f'color:{accent};background:{bg};text-align:right;'
+                f'border-radius:6px;">{escape_html(val)}</td>'
+                "</tr>"
+            )
+        stats_html = (
+            '<div class="aa-details" style="margin-top:8px;">'
+            f'<div style="font-size:11px;letter-spacing:0.06em;text-transform:uppercase;'
+            f'color:{L["muted"]};margin-bottom:8px;">Статистика</div>'
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            f'class="aa-stats-table" style="background:{L["pre_bg"]};'
+            f'border:1px solid {L["line"]};border-radius:8px;">'
+            + "".join(items)
+            + "</table></div>"
+        )
+
+    # Top vacancies table (first table block), abbreviated.
+    top_html = ""
+    for theme in getattr(payload, "themes", None) or []:
+        for block in getattr(theme, "blocks", None) or []:
+            if (block or {}).get("type") != "table":
+                continue
+            headers = block.get("headers") or []
+            table_rows = (block.get("rows") or [])[:8]
+            if not headers or not table_rows:
+                continue
+            head_cells = "".join(
+                f'<th style="padding:6px 8px;text-align:left;font-size:11px;'
+                f'color:{L["muted"]};border-bottom:1px solid {L["line"]};">'
+                f"{escape_html(h)}</th>"
+                for h in headers
+            )
+            body_rows = []
+            for row in table_rows:
+                cells = []
+                for i, c in enumerate(row):
+                    text = str(c)
+                    style = (
+                        f"padding:6px 8px;font-size:12px;color:{L['text']};"
+                        "vertical-align:top;"
+                    )
+                    if i == 0 and text.upper() in _CATEGORY_COLORS:
+                        accent, bg = _CATEGORY_COLORS[text.upper()]
+                        style = (
+                            f"padding:6px 8px;font-size:12px;font-weight:700;"
+                            f"color:{accent};background:{bg};border-radius:4px;"
+                        )
+                    cells.append(f'<td style="{style}">{escape_html(text)}</td>')
+                body_rows.append("<tr>" + "".join(cells) + "</tr>")
+            top_html = (
+                f'<div style="margin-top:18px;">'
+                f'<div style="font-size:11px;letter-spacing:0.06em;text-transform:uppercase;'
+                f'color:{L["muted"]};margin-bottom:8px;">'
+                f'{escape_html(block.get("title") or "Топ")}</div>'
+                f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+                f'class="aa-top-table" style="border:1px solid {L["line"]};'
+                f'border-radius:8px;overflow:hidden;">'
+                f"<thead><tr>{head_cells}</tr></thead>"
+                f"<tbody>{''.join(body_rows)}</tbody></table></div>"
+            )
+            break
+        if top_html:
+            break
+
+    attach_note = ""
+    if pdf_name:
+        attach_note = (
+            f'<p class="aa-msg" style="margin:14px 0 0 0;font-size:13px;'
+            f'color:{L["muted"]};font-style:italic;">'
+            f"PDF во вложении: <b style=\"color:{L['text']};font-style:normal;\">"
+            f"{escape_html(pdf_name)}</b></p>"
+        )
+
+    dark_css = f"""
+@media (prefers-color-scheme: dark) {{
+  .aa-body {{ background-color: {D["bg"]} !important; }}
+  .aa-card {{ background-color: {D["panel"]} !important; border-color: {D["line"]} !important; }}
+  .aa-brand, .aa-title, .aa-msg, .aa-meta td {{ color: {D["text"]} !important; }}
+  .aa-muted, .aa-footer, .aa-details > div {{ color: {D["muted"]} !important; }}
+  .aa-bar {{ background-color: {D["accent"]} !important; }}
+  .aa-badge {{ background-color: {D["accent_soft"]} !important; color: {D["accent"]} !important; }}
+  .aa-stats-table, .aa-top-table {{ background-color: {D["pre_bg"]} !important; border-color: {D["line"]} !important; }}
+  .aa-stats-table td, .aa-top-table td, .aa-top-table th {{ color: {D["pre_fg"]} !important; }}
+  .aa-stats-table td:first-child, .aa-top-table th {{ color: {D["muted"]} !important; }}
+}}
+""".strip()
+
+    return f"""<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>{escape_html(title)}</title>
+<style type="text/css">
+{dark_css}
+</style>
+</head>
+<body class="aa-body" style="margin:0;padding:0;background-color:{L["bg"]};">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="aa-body"
+         style="background-color:{L["bg"]};padding:24px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" class="aa-card"
+               style="max-width:600px;width:100%;background-color:{L["panel"]};
+               border:1px solid {L["line"]};border-radius:12px;overflow:hidden;">
+          <tr>
+            <td class="aa-bar" style="height:4px;background-color:{L["accent"]};font-size:0;line-height:0;">&nbsp;</td>
+          </tr>
+          <tr>
+            <td style="padding:22px 24px 8px 24px;">
+              <div class="aa-brand" style="font-family:Georgia,'Source Serif 4',serif;
+                   font-size:22px;font-weight:600;color:{L["text"]};letter-spacing:-0.02em;">
+                auto-apply-app
+              </div>
+              <div class="aa-muted" style="margin-top:4px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;
+                   font-size:12px;color:{L["muted"]};">
+                Отчёт о работе
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 24px 20px 24px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
+              <span class="aa-badge" style="display:inline-block;padding:4px 10px;border-radius:6px;
+                    background-color:{L["accent_soft"]};color:{L["accent"]};font-size:11px;
+                    font-weight:600;letter-spacing:0.04em;text-transform:uppercase;">
+                Отчёт
+              </span>
+              <h1 class="aa-title" style="margin:14px 0 10px 0;font-size:20px;line-height:1.3;
+                  font-weight:600;color:{L["text"]};">{escape_html(title)}</h1>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="aa-meta"
+                     style="border-top:1px solid {L["line"]};padding-top:12px;margin-bottom:8px;">
+                <tr>
+                  <td style="padding:4px 0;color:{L["muted"]};font-size:13px;">Профиль</td>
+                  <td style="padding:4px 0;color:{L["text"]};font-size:13px;text-align:right;font-weight:600;">
+                    {escape_html(profile)}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:4px 0;color:{L["muted"]};font-size:13px;">Тип</td>
+                  <td style="padding:4px 0;color:{L["text"]};font-size:13px;text-align:right;">
+                    {escape_html(kind)}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:4px 0;color:{L["muted"]};font-size:13px;">Сформирован</td>
+                  <td style="padding:4px 0;color:{L["text"]};font-size:13px;text-align:right;font-style:italic;">
+                    {escape_html(when or "—")}
+                  </td>
+                </tr>
+              </table>
+              {stats_html}
+              {top_html}
+              {attach_note}
+            </td>
+          </tr>
+          <tr>
+            <td class="aa-footer" style="padding:14px 24px 20px 24px;border-top:1px solid {L["line"]};
+                font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px;line-height:1.45;
+                color:{L["muted"]};">
+              Полная версия — в PDF-вложении. Откройте auto-apply-app для деталей и журнала.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+"""
+
+
+def render_report_email(
+    payload: Any,
+    *,
+    pdf_name: str | None = None,
+) -> tuple[str, str]:
+    """Build (plain_text, html) for a scheduled/manual report email."""
+    plain = render_plain_report(payload, pdf_name=pdf_name)
+    html_body = render_html_report(payload, pdf_name=pdf_name)
+    return plain, html_body

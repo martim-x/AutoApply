@@ -97,11 +97,19 @@ Journal:
 
 ---
 
-## 4. Расписания
+## 4. Расписания и PDF-отчёт на почту
 
-SMTP не трогает существующие слоты:
+Тот же канал `ALERT_SMTP_*` используется и для **scheduled PDF-отчётов**:
 
-- парсинг: `PARSE_SCHEDULE_TIMES` (по умолчанию 12:00, 00:00)
-- PDF: `REPORT_SCHEDULE_HOUR/MINUTE` (по умолчанию 04:00)
+- после `generate_scheduled_report` → HTML-тело (статистика) + PDF-вложение;
+- сбой SMTP **не валит** scheduler: journal `report_email_error` / `report_email_skipped`, PDF остаётся в `data/reports/`;
+- вручную: `POST /api/reports/save` с `"email": true`.
+
+Слоты (не зависят от SMTP):
+
+- парсинг: `PARSE_SCHEDULE_ENABLED` + `PARSE_SCHEDULE_TIMES` (по умолчанию `12:00,00:00`) + timezone;
+- PDF: `REPORT_SCHEDULE_ENABLED` + `REPORT_SCHEDULE_HOUR/MINUTE` (по умолчанию 04:00) или `REPORT_SCHEDULE_CRON`.
+
+Smoke без ожидания полуночи: один ближайший `HH:MM` в `PARSE_SCHEDULE_TIMES` и соседний час/минута для report — см. [getting-started.md](./getting-started.md).
 
 При ошибке scheduled parse дополнительно уходит алерт `parse_schedule_error` (если включены error/parse-fail флаги).

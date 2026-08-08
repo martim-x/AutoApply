@@ -32,6 +32,7 @@ from app.application.reports import ReportPayload, ReportTheme
 
 _FONT_REG = "AAReport"
 _FONT_BOLD = "AAReport-Bold"
+_FONT_ITALIC = "AAReport-Italic"
 
 _CANDIDATE_REGULAR = (
     Path(__file__).resolve().parent / "fonts" / "DejaVuSans.ttf",
@@ -57,9 +58,25 @@ _CANDIDATE_BOLD = (
     Path("/Library/Fonts/Arial Unicode.ttf"),
 )
 
+_CANDIDATE_ITALIC = (
+    Path(__file__).resolve().parent / "fonts" / "DejaVuSans-Oblique.ttf",
+    Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf"),
+    Path("/usr/share/fonts/truetype/liberation/LiberationSans-Italic.ttf"),
+    Path("/usr/share/fonts/TTF/DejaVuSans-Oblique.ttf"),
+    Path("/System/Library/Fonts/Supplemental/Arial Italic.ttf"),
+    Path("/Library/Fonts/Arial Italic.ttf"),
+)
+
+_CATEGORY_HEX = {
+    "HIGH": "#1a7a38",
+    "MEDIUM": "#b8860b",
+    "LOW": "#5a635c",
+}
+_CATEGORY_COLORS = {k: colors.HexColor(v) for k, v in _CATEGORY_HEX.items()}
+
 
 @lru_cache(maxsize=1)
-def _register_fonts() -> tuple[str, str]:
+def _register_fonts() -> tuple[str, str, str]:
     regular = next((p for p in _CANDIDATE_REGULAR if p.is_file()), None)
     if regular is None:
         raise RuntimeError(
@@ -67,9 +84,11 @@ def _register_fonts() -> tuple[str, str]:
             "or place DejaVuSans.ttf under app/infrastructure/reports/fonts/"
         )
     bold = next((p for p in _CANDIDATE_BOLD if p.is_file()), regular)
+    italic = next((p for p in _CANDIDATE_ITALIC if p.is_file()), regular)
     pdfmetrics.registerFont(TTFont(_FONT_REG, str(regular)))
     pdfmetrics.registerFont(TTFont(_FONT_BOLD, str(bold)))
-    return _FONT_REG, _FONT_BOLD
+    pdfmetrics.registerFont(TTFont(_FONT_ITALIC, str(italic)))
+    return _FONT_REG, _FONT_BOLD, _FONT_ITALIC
 
 
 def _esc(text: str) -> str:
@@ -82,7 +101,7 @@ def _esc(text: str) -> str:
 
 
 def _styles() -> dict[str, ParagraphStyle]:
-    font, font_bold = _register_fonts()
+    font, font_bold, font_italic = _register_fonts()
     base = getSampleStyleSheet()
     return {
         "title": ParagraphStyle(
@@ -126,7 +145,7 @@ def _styles() -> dict[str, ParagraphStyle]:
         "meta": ParagraphStyle(
             "AAMeta",
             parent=base["Normal"],
-            fontName=font,
+            fontName=font_italic,
             fontSize=9,
             leading=12,
             textColor=colors.HexColor("#555555"),
@@ -136,6 +155,13 @@ def _styles() -> dict[str, ParagraphStyle]:
             "AACell",
             parent=base["Normal"],
             fontName=font,
+            fontSize=8,
+            leading=10,
+        ),
+        "cell_cat": ParagraphStyle(
+            "AACellCat",
+            parent=base["Normal"],
+            fontName=font_bold,
             fontSize=8,
             leading=10,
         ),
@@ -161,7 +187,7 @@ def _header_footer(canvas, doc, payload: ReportPayload) -> None:
     # top rule
     y_top = A4[1] - 12 * mm
     canvas.line(18 * mm, y_top, A4[0] - 18 * mm, y_top)
-    canvas.setFont(_register_fonts()[0], 8)
+    canvas.setFont(_register_fonts()[0], 8)  # regular
     canvas.setFillColor(colors.HexColor("#666666"))
     canvas.drawString(18 * mm, y_top + 2 * mm, header[:90])
     # bottom
@@ -174,28 +200,43 @@ def _header_footer(canvas, doc, payload: ReportPayload) -> None:
 def _kv_block(block: dict, styles: dict) -> KeepTogether:
     parts: list[Any] = [Paragraph(_esc(block.get("title") or ""), styles["block"])]
     rows = block.get("rows") or []
-    data = [
-        [
-            Paragraph(f"<b>{_esc(str(k))}</b>", styles["cell"]),
-            Paragraph(_esc(str(v)), styles["cell"]),
-        ]
-        for k, v in rows
+    data = []
+    style_cmds: list[Any] = [
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.25, colors.HexColor("#e6e6e6")),
     ]
+    for idx, (k, v) in enumerate(rows):
+        label = str(k)
+        cat = label.upper()
+        if cat in _CATEGORY_COLORS:
+            data.append(
+                [
+                    Paragraph(f"<b>{_esc(label)}</b>", styles["cell_cat"]),
+                    Paragraph(
+                        f'<font color="{_CATEGORY_HEX[cat]}">'
+                        f"<b>{_esc(str(v))}</b></font>",
+                        styles["cell_cat"],
+                    ),
+                ]
+            )
+            style_cmds.append(
+                ("TEXTCOLOR", (0, idx), (0, idx), _CATEGORY_COLORS[cat])
+            )
+        else:
+            data.append(
+                [
+                    Paragraph(f"<b>{_esc(label)}</b>", styles["cell"]),
+                    Paragraph(_esc(str(v)), styles["cell"]),
+                ]
+            )
     if not data:
         data = [[Paragraph("—", styles["cell"]), Paragraph("", styles["cell"])]]
     table = Table(data, colWidths=[45 * mm, 125 * mm])
-    table.setStyle(
-        TableStyle(
-            [
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 2),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                ("TOPPADDING", (0, 0), (-1, -1), 2),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-                ("LINEBELOW", (0, 0), (-1, -2), 0.25, colors.HexColor("#e6e6e6")),
-            ]
-        )
-    )
+    table.setStyle(TableStyle(style_cmds))
     parts.append(table)
     parts.append(Spacer(1, 4 * mm))
     return KeepTogether(parts)
@@ -219,11 +260,35 @@ def _table_block(block: dict, styles: dict) -> list:
     title = Paragraph(_esc(block.get("title") or ""), styles["block"])
 
     def make_table(chunk_rows: list) -> Table:
-        data = [
-            [Paragraph(f"<b>{_esc(h)}</b>", styles["cell"]) for h in headers]
-        ] + [
-            [Paragraph(_esc(str(c)), styles["cell"]) for c in row] for row in chunk_rows
+        data = [[Paragraph(f"<b>{_esc(h)}</b>", styles["cell"]) for h in headers]]
+        style_cmds: list[Any] = [
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f0f0f0")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#dddddd")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 3),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+            ("TOPPADDING", (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
         ]
+        for r_i, row in enumerate(chunk_rows):
+            cells = []
+            for c_i, c in enumerate(row):
+                text = str(c)
+                cat = text.upper()
+                if c_i == 0 and cat in _CATEGORY_COLORS:
+                    cells.append(
+                        Paragraph(
+                            f'<font color="{_CATEGORY_HEX[cat]}">'
+                            f"<b>{_esc(text)}</b></font>",
+                            styles["cell_cat"],
+                        )
+                    )
+                    style_cmds.append(
+                        ("TEXTCOLOR", (0, r_i + 1), (0, r_i + 1), _CATEGORY_COLORS[cat])
+                    )
+                else:
+                    cells.append(Paragraph(_esc(text), styles["cell"]))
+            data.append(cells)
         n = max(len(headers), 1)
         width = 170 * mm
         col_w = [width / n] * n
@@ -233,19 +298,7 @@ def _table_block(block: dict, styles: dict) -> list:
             rest = width - sum(col_w)
             col_w.extend([rest / (n - 3)] * (n - 3))
         t = Table(data, colWidths=col_w, repeatRows=1)
-        t.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f0f0f0")),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#dddddd")),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 3),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-                    ("TOPPADDING", (0, 0), (-1, -1), 2),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-                ]
-            )
-        )
+        t.setStyle(TableStyle(style_cmds))
         return t
 
     if not rows:

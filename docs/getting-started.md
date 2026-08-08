@@ -120,7 +120,7 @@ level: middle+
 |------|--------|
 | `site` | `rabota.by` или `hh.ru` (страна должна совпасть) |
 | `country` / `city` | строго из `config/areas.json` → HH `area=` |
-| `strict` | резать вакансии с **другим** городом |
+| `strict` | `true` — SERP по городу + резать другой город; `false` — **вся страна** (`area` = `country_area_id`, для Беларуси `16`) |
 | `queries` | поисковые строки SERP |
 | `remote_or_hybrid` | обязательный remote/hybrid |
 | `skip_gov` | резать `*.gov.*` и gov-маркеры |
@@ -133,6 +133,21 @@ level: middle+
 Пока нет `launch.json`, подхватывается example (или defaults из `.env`).
 
 После правок в UI: **Проверить** → **Сохранить фильтры**.
+
+### Поиск по всей стране
+
+Один launch уже может покрыть всю Беларусь (или всю Россию на hh.ru):
+
+```text
+site: rabota.by
+country: Беларусь
+city: Минск
+strict: false
+```
+
+- `strict: false` → в SERP уходит `area=16` (страна), а не area города.
+- `city` всё ещё нужен для резолва каталога и мягкого scoring по городу.
+- Несколько городов / несколько `area=` в одном URL — **пока нет** (будущее: список cities/areas).
 
 ---
 
@@ -167,7 +182,7 @@ ENABLE_REMOTE_BROWSER=true
 
 ## Расписание PDF-отчётов
 
-В том же процессе uvicorn (без sidecar):
+В том же процессе uvicorn (без sidecar). По умолчанию выключено (`REPORT_SCHEDULE_ENABLED=false`).
 
 ```env
 REPORT_SCHEDULE_ENABLED=true
@@ -179,14 +194,17 @@ REPORT_SCHEDULE_KIND=work
 REPORT_SCHEDULE_PROFILE=default
 ```
 
-PDF пишется в `data/reports/`, событие — в журнал; в UI есть подсказка про следующее/последнее время.  
-Вручную: `GET /api/reports/{kind}.pdf` или `POST /api/reports/save`.
+PDF пишется в `data/reports/`, событие — в журнал; при включённом `ALERT_SMTP_*` уходит **HTML-письмо + PDF-вложение** на `ALERT_SMTP_TO` (тот же SMTP-канал, что и алерты).  
+Вручную: `GET /api/reports/{kind}.pdf` или `POST /api/reports/save` (опционально `"email": true` в теле).
+
+Timezone — IANA (`Europe/Minsk` и т.п.); час/минута считаются в этом поясе.
 
 ---
 
 ## Расписание парсинга вакансий
 
-Отдельно от PDF (рекрутеры чаще постят утром/вечером → **12:00 и 00:00**):
+Отдельно от PDF (рекрутеры чаще постят утром/вечером → **12:00 и 00:00**).  
+Локально по умолчанию `PARSE_SCHEDULE_ENABLED=false`. На Railway — `true` после сохранения сессий.
 
 ```env
 PARSE_SCHEDULE_ENABLED=true
@@ -199,7 +217,20 @@ PARSE_MAX_SERP_PAGES=20
 PARSE_DUP_PAGE_STOP=3
 ```
 
-Локально по умолчанию `PARSE_SCHEDULE_ENABLED=false`. На Railway — `true` после сохранения сессий.
+`PARSE_SCHEDULE_TIMES` — список `HH:MM` через запятую в `PARSE_SCHEDULE_TIMEZONE`.  
+Для smoke-теста можно поставить **один ближайший слот** (например через ~5 минут), не дожидаясь 00:00/12:00:
+
+```env
+PARSE_SCHEDULE_ENABLED=true
+PARSE_SCHEDULE_TIMEZONE=Europe/Minsk
+PARSE_SCHEDULE_TIMES=14:28
+REPORT_SCHEDULE_ENABLED=true
+REPORT_SCHEDULE_TIMEZONE=Europe/Minsk
+REPORT_SCHEDULE_HOUR=14
+REPORT_SCHEDULE_MINUTE=30
+```
+
+После проверки верните прод-слоты (`12:00,00:00` и report `04:00`). Код менять не нужно — только env + рестарт.
 
 При срабатывании: **HH StartSearch** (если есть HH-сессия) и **LinkedIn vacancies** (если есть LI-сессия) — предпочтительно оба.  
 Дубликаты (URL / `vacancy_id` / canonical link уже в БД профиля) → `filtered:duplicate`, без повторной очереди.  

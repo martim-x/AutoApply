@@ -9,7 +9,12 @@ from app.application.alerts import (
     reset_alert_service,
 )
 from app.domain.enums import JobStatus
-from app.infrastructure.alerts.smtp import SmtpSender, send_smtp_alert
+from app.infrastructure.alerts.smtp import (
+    SmtpSender,
+    attachment_from_path,
+    send_report_email,
+    send_smtp_alert,
+)
 from app.infrastructure.browser.gateway import PlaywrightBrowserGateway
 from app.infrastructure.db.sqlite_uow import SqliteUnitOfWork
 from app.infrastructure.settings import Settings
@@ -84,6 +89,32 @@ def test_send_smtp_skipped_when_disabled():
     sender = MagicMock(spec=SmtpSender)
     assert send_smtp_alert(s, subject="x", body="y", sender=sender) is False
     sender.send.assert_not_called()
+
+
+def test_attachment_from_path_and_report_email(tmp_path):
+    pdf = tmp_path / "auto-apply-app-work-default.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    name, data, maintype, subtype = attachment_from_path(pdf)
+    assert name.endswith(".pdf")
+    assert data.startswith(b"%PDF")
+    assert maintype == "application"
+    assert subtype == "pdf"
+
+    sender = MagicMock(spec=SmtpSender)
+    ok = send_report_email(
+        _settings(),
+        subject="report",
+        body="plain",
+        html_body="<p>hi</p>",
+        pdf_path=pdf,
+        sender=sender,
+    )
+    assert ok is True
+    kwargs = sender.send.call_args.kwargs
+    assert kwargs["html_body"] == "<p>hi</p>"
+    assert kwargs["attachments"]
+    assert kwargs["attachments"][0][0] == pdf.name
+    assert kwargs["attachments"][0][1] == b"%PDF-1.4 fake"
 
 
 def test_alert_service_rate_limit():

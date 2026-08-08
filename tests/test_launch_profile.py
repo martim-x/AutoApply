@@ -120,6 +120,29 @@ def test_legacy_apply_limit_becomes_vacancy_limit(tmp_path):
     assert any("vacancy_limit" in n for n in notes)
 
 
+def test_vacancy_apply_limits_accept_high_ceiling():
+    text = SAMPLE.replace("vacancy_limit: 40", "vacancy_limit: 100000").replace(
+        "apply_limit: 25", "apply_limit: 100000"
+    )
+    p = parse_and_validate_text(text)
+    assert p.vacancy_limit == 100_000
+    assert p.apply_limit == 100_000
+
+
+def test_vacancy_apply_limits_reject_above_ceiling():
+    text = SAMPLE.replace("vacancy_limit: 40", "vacancy_limit: 100001")
+    with pytest.raises((ValueError, ValidationError)):
+        parse_and_validate_text(text)
+
+
+def test_strict_false_uses_country_area():
+    """Country-wide SERP: strict false → Belarus area=16, not city 1002."""
+    text = SAMPLE.replace("strict: true", "strict: false")
+    p = parse_and_validate_text(text)
+    assert p.search_area == "16"
+    assert p.location.country_area_id == "16"
+
+
 def test_location_filter_other_city():
     p = parse_and_validate_text(SAMPLE)
     r = evaluate_vacancy(

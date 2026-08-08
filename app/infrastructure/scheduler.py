@@ -54,6 +54,69 @@ def next_run_at_times(
     return min(candidates)
 
 
+def _maybe_email_report(
+    uow: UnitOfWork,
+    settings: Settings,
+    *,
+    payload: Any,
+    pdf_path: Any,
+    profile: str,
+    kind: str,
+    scheduled: bool,
+) -> bool:
+    """
+    Send HTML report + PDF via ALERT_SMTP_*.
+    Failures are logged + journaled; never raise (scheduler must stay alive).
+    """
+    try:
+        from app.infrastructure.alerts.smtp import send_report_email
+        from app.infrastructure.email_templates import render_report_email
+
+        plain, html_body = render_report_email(payload, pdf_name=pdf_path.name)
+        subject = f"[auto-apply-app] {payload.title} · {profile}"
+        ok = send_report_email(
+            settings,
+            subject=subject,
+            body=plain,
+            html_body=html_body,
+            pdf_path=pdf_path,
+        )
+        if ok:
+            uow.journal.log(
+                profile,
+                "report_emailed",
+                f"PDF {kind} → mail ({pdf_path.name})",
+                payload={
+                    "path": str(pdf_path),
+                    "kind": kind,
+                    "scheduled": scheduled,
+                },
+            )
+            log.info("Report emailed: %s", pdf_path.name)
+            return True
+        uow.journal.log(
+            profile,
+            "report_email_skipped",
+            "SMTP disabled or misconfigured — PDF kept on disk",
+            payload={"path": str(pdf_path), "kind": kind, "scheduled": scheduled},
+            level="warning",
+        )
+        return False
+    except Exception as e:
+        log.warning("Report email failed (PDF kept): %s", e)
+        try:
+            uow.journal.log(
+                profile,
+                "report_email_error",
+                str(e),
+                payload={"path": str(pdf_path), "kind": kind},
+                level="error",
+            )
+        except Exception:
+            pass
+        return False
+
+
 def generate_scheduled_report(
     uow: UnitOfWork,
     settings: Settings,
@@ -61,11 +124,16 @@ def generate_scheduled_report(
     kind: str | None = None,
     profile: str | None = None,
     scheduled: bool = True,
+    email: bool | None = None,
 ) -> dict[str, Any]:
-    """Write PDF under data/reports/ and journal + report_files row."""
+    """
+    Write PDF under data/reports/ and journal + report_files row.
+    When email is True (default for scheduled), also send HTML + PDF via ALERT_SMTP_*.
+    """
     sched = settings.parse_report_schedule()
     kind = normalize_kind(kind or sched["kind"])
     profile = (profile or sched["profile"] or "default").strip() or "default"
+    send_mail = scheduled if email is None else bool(email)
     settings.ensure_dirs()
     payload = assemble_report(uow, settings, kind, profile)
     stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())
@@ -79,12 +147,24 @@ def generate_scheduled_report(
         f"{label} PDF {kind} → {out.name}",
         payload={"path": str(out), "kind": kind, "scheduled": scheduled},
     )
+    emailed = False
+    if send_mail:
+        emailed = _maybe_email_report(
+            uow,
+            settings,
+            payload=payload,
+            pdf_path=out,
+            profile=profile,
+            kind=kind,
+            scheduled=scheduled,
+        )
     return {
         "ok": True,
         "path": str(out),
         "kind": kind,
         "profile": profile,
         "scheduled": scheduled,
+        "emailed": emailed,
         "created_at": time.time(),
     }
 

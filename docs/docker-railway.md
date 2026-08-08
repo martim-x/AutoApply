@@ -71,9 +71,15 @@ PARSE_EARLY_STOP_ENABLED=true
 PARSE_OLD_STREAK_STOP=0
 PARSE_MAX_SERP_PAGES=20
 PARSE_DUP_PAGE_STOP=3
+
+# Same SMTP channel delivers scheduled report HTML + PDF
+ALERT_SMTP_ENABLED=true
+# ALERT_SMTP_HOST / PORT / USER / PASSWORD / FROM / TO …
 ```
 
 Парсинг по расписанию (тот же процесс uvicorn): при наличии сессий запускает **HH search и LinkedIn vacancy collect параллельно** (два Chromium, если оба слота свободны). Дубликаты по URL/`vacancy_id` пропускаются; при сортировке по дате полностью дублирующие страницы SERP пропускаются, early-stop — после `PARSE_DUP_PAGE_STOP` таких страниц подряд (лимит `PARSE_MAX_SERP_PAGES`).
+
+Для smoke: временно `PARSE_SCHEDULE_TIMES=<HH:MM ≈ now+5>` и `REPORT_SCHEDULE_HOUR/MINUTE` на 1–3 мин позже; после проверки вернуть `12:00,00:00` / `04:00`. Подробнее — [getting-started.md](./getting-started.md).
 
 > **RAM:** два Chromium на профиль ≈ 2× память headless Chrome. На Railway держите запас (часто 1–2 GB+), особенно если одновременно открыт remote screencast.
 

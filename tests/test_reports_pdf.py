@@ -54,3 +54,65 @@ def test_render_temp_file(uow: SqliteUnitOfWork, settings: Settings) -> None:
         assert path.read_bytes()[:4] == b"%PDF"
     finally:
         path.unlink(missing_ok=True)
+
+
+def test_generate_scheduled_report_emails_without_crashing(
+    uow: SqliteUnitOfWork, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.infrastructure import scheduler as sched_mod
+
+    settings.alert_smtp_enabled = True
+    settings.alert_smtp_host = "smtp.test"
+    settings.alert_smtp_to = "to@test"
+    settings.alert_smtp_from = "from@test"
+
+    calls: list[dict] = []
+
+    def fake_send(settings_obj, *, subject, body, html_body=None, pdf_path=None, sender=None):
+        calls.append(
+            {
+                "subject": subject,
+                "html": html_body,
+                "pdf": str(pdf_path) if pdf_path else None,
+            }
+        )
+        return True
+
+    monkeypatch.setattr(
+        "app.infrastructure.alerts.smtp.send_report_email",
+        fake_send,
+    )
+    result = sched_mod.generate_scheduled_report(
+        uow, settings, kind="work", profile="default", scheduled=True
+    )
+    assert result["ok"] is True
+    assert Path(result["path"]).is_file()
+    assert result["emailed"] is True
+    assert calls and calls[0]["html"]
+    assert "auto-apply-app" in (calls[0]["html"] or "")
+    events = [e.event for e in uow.journal.recent("default", limit=20)]
+    assert "report_generated" in events
+    assert "report_emailed" in events
+
+
+def test_generate_report_smtp_failure_keeps_pdf(
+    uow: SqliteUnitOfWork, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.infrastructure import scheduler as sched_mod
+
+    settings.alert_smtp_enabled = True
+    settings.alert_smtp_host = "smtp.test"
+    settings.alert_smtp_to = "to@test"
+
+    def boom(*_a, **_k):
+        raise RuntimeError("smtp down")
+
+    monkeypatch.setattr("app.infrastructure.alerts.smtp.send_report_email", boom)
+    result = sched_mod.generate_scheduled_report(
+        uow, settings, kind="work", profile="default", scheduled=True
+    )
+    assert result["ok"] is True
+    assert Path(result["path"]).is_file()
+    assert result["emailed"] is False
+    events = [e.event for e in uow.journal.recent("default", limit=20)]
+    assert "report_email_error" in events

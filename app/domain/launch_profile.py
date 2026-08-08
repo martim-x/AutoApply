@@ -96,9 +96,9 @@ class LaunchProfile(BaseModel):
     skip_gov: bool = True
     require_python_keywords: bool = True
     # Max vacancies to find/parse in one search run (shown in UI as «до N»).
-    vacancy_limit: int = Field(default=30, ge=1, le=200)
+    vacancy_limit: int = Field(default=30, ge=1, le=100_000)
     # Max queued vacancies to apply in one apply run (all categories HIGH→LOW).
-    apply_limit: int = Field(default=30, ge=1, le=200)
+    apply_limit: int = Field(default=30, ge=1, le=100_000)
     dry_run: bool = False
     # Legend: $2200–2800 Middle+
     salary_min_usd: int | None = Field(default=2200, ge=0, le=50_000)

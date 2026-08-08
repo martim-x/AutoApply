@@ -19,6 +19,8 @@ ReportKindLiteral = Literal["work", "queue", "launch", "linkedin"]
 class GenerateReportBody(BaseModel):
     kind: ReportKindLiteral = "work"
     profile: str = Field(default="default", min_length=1, max_length=64)
+    # When true, also email HTML + PDF via ALERT_SMTP_* (scheduled path always tries).
+    email: bool = False
 
 
 def create_reports_router() -> APIRouter:
@@ -81,11 +83,14 @@ def create_reports_router() -> APIRouter:
 
     @router.post("/save")
     def save_report(body: GenerateReportBody, request: Request) -> dict[str, Any]:
-        """Generate PDF into data/reports/ (kept on disk)."""
+        """Generate PDF into data/reports/ (kept on disk); optional email."""
         service = request.app.state.service
         try:
             return service.run_report_now(
-                kind=body.kind, profile=body.profile, scheduled=False
+                kind=body.kind,
+                profile=body.profile,
+                scheduled=False,
+                email=body.email,
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e)) from e
