@@ -35,6 +35,10 @@
   --waiting: #b8860b;
   --error: #b32626;
   --done: #1f6b3a;
+  --light-idle: #8a938c;
+  --light-active: #1f6b3a;
+  --light-warn: #c9a227;
+  --light-error: #b32626;
   --log-bg: #f7f8f6;
   --log-fg: #1a211c;
   --log-time: #6a746c;
@@ -121,6 +125,10 @@
   --waiting: #f0c014;
   --error: #ef6b6b;
   --done: #3dcf6a;
+  --light-idle: #7a857c;
+  --light-active: #3dcf6a;
+  --light-warn: #f0c014;
+  --light-error: #ef6b6b;
   --log-bg: #070907;
   --log-fg: #d7e0d9;
   --log-time: #7a9084;
@@ -408,7 +416,70 @@ html[data-workspace="hh"] [data-workspace-panel="linkedin"] {
   display: flex;
   justify-content: flex-end;
   align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   padding-top: 0.2rem;
+}
+.status-light {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2.1rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--status-pill-bg);
+  font-family: var(--mono);
+  font-size: var(--font-tiny);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  box-shadow: var(--shadow);
+  white-space: nowrap;
+  cursor: default;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.status-light:disabled {
+  opacity: 1;
+  color: var(--muted);
+}
+.status-light .dot {
+  width: 0.62rem;
+  height: 0.62rem;
+  border-radius: 50%;
+  background: var(--light-idle);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+  flex: 0 0 auto;
+}
+.status-light[data-light="active"] {
+  border-color: var(--primary-line);
+  color: var(--text);
+}
+.status-light[data-light="active"] .dot {
+  background: var(--light-active);
+  animation: pulse 2.2s ease-in-out infinite;
+}
+.status-light[data-light="warn"] {
+  border-color: var(--warn-line);
+  color: var(--text);
+}
+.status-light[data-light="warn"] .dot {
+  background: var(--light-warn);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+.status-light[data-light="error"] {
+  border-color: var(--danger-line);
+  color: var(--text);
+}
+.status-light[data-light="error"] .dot {
+  background: var(--light-error);
+  animation: none;
+}
+.status-light[data-light="idle"] .dot {
+  background: var(--light-idle);
+  animation: none;
 }
 .status-pill {
   display: inline-flex;
@@ -426,38 +497,35 @@ html[data-workspace="hh"] [data-workspace-panel="linkedin"] {
   box-shadow: var(--shadow);
   white-space: nowrap;
 }
-.status-pill[data-status="searching"],
-.status-pill[data-status="applying"],
-.status-pill[data-status="done"] {
+.status-pill[data-light="active"] {
   border-color: var(--primary-line);
   box-shadow: 0 0 0 2px var(--highlight-ring);
 }
-.status-pill[data-status="waiting_user"],
-.status-pill[data-status="logging_in"] {
+.status-pill[data-light="warn"] {
   border-color: var(--warn-line);
   box-shadow: 0 0 0 2px rgba(240, 192, 20, 0.35);
 }
-.status-pill[data-status="error"] {
+.status-pill[data-light="error"] {
   border-color: var(--danger-line);
 }
 .status-pill .dot {
   width: 0.55rem;
   height: 0.55rem;
   border-radius: 50%;
-  background: var(--idle);
-  animation: pulse 2.2s ease-in-out infinite;
+  background: var(--light-idle);
+  animation: none;
 }
 @keyframes pulse {
   0%, 100% { transform: scale(1); opacity: 1; }
   50% { transform: scale(1.2); opacity: 0.7; }
 }
-[data-status="idle"] .dot { background: var(--idle); }
-[data-status="logging_in"] .dot,
-[data-status="waiting_user"] .dot { background: var(--waiting); }
-[data-status="searching"] .dot { background: var(--searching); }
-[data-status="applying"] .dot { background: var(--applying); }
-[data-status="error"] .dot { background: var(--error); animation: none; }
-[data-status="done"] .dot { background: var(--done); animation: none; }
+.status-pill[data-light="idle"] .dot { background: var(--light-idle); }
+.status-pill[data-light="active"] .dot {
+  background: var(--light-active);
+  animation: pulse 2.2s ease-in-out infinite;
+}
+.status-pill[data-light="warn"] .dot { background: var(--light-warn); }
+.status-pill[data-light="error"] .dot { background: var(--light-error); }
 
 .controls, .panel, .stats .stat {
   background: var(--panel);
@@ -1318,6 +1386,11 @@ a:hover { text-decoration: underline; }
   .workspace-btn {
     min-width: 0;
     padding: 0.5rem 1.6rem;
+  }
+  .status-light {
+    min-height: var(--touch);
+    padding: 0.4rem 0.85rem;
+    font-size: var(--font-meta);
   }
   .status-pill {
     min-height: var(--touch);

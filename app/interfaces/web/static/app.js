@@ -34,12 +34,31 @@
   let lastBusyLi = false;
   let lastHasSession = false;
   let lastHasLiSession = false;
+  let lastAlert = null;
+  let lastRemoteBrowsers = null;
+  let lastLightHh = "idle";
+  let lastLightLi = "idle";
   let workspace = "hh";
   let liTab = "network";
   let remoteFsDesired = false;
   let logFullscreenId = null;
   const WORKSPACE_KEY = "aa-workspace";
   const PANEL_SIZE_KEY = "aa-panel-sizes";
+  const ALERT_RECENT_SEC = 45 * 60;
+  const LIGHT_ERROR_EVENTS = new Set([
+    "error",
+    "job_aborted",
+    "search_abort",
+    "linkedin_auth_wall",
+    "linkedin_network_error",
+    "linkedin_vacancies_error",
+    "parse_schedule_error",
+    "session_lost",
+    "browser_crash",
+    "captcha",
+    "need_manual",
+    "linkedin_checkpoint",
+  ]);
 
   function profile() {
     if (profileSelect.value) return profileSelect.value;
@@ -390,6 +409,112 @@
     return translated === key ? code : translated;
   }
 
+  function workspaceTargets(text, event) {
+    const blob = `${event || ""} ${text || ""}`.toLowerCase();
+    const li = /(linkedin|\bli[_ -]|сеть|connect|контакт|checkpoint)/i.test(blob);
+    const hh = /(hh\.|rabota|hhru|\bhh\b|ваканс)/i.test(blob);
+    if (li && !hh) return ["linkedin"];
+    if (hh && !li) return ["hh"];
+    return ["hh", "linkedin"];
+  }
+
+  function alertIsErrorLike(alert) {
+    if (!alert || !alert.message) return false;
+    const ev = String(alert.event || "").toLowerCase();
+    if (LIGHT_ERROR_EVENTS.has(ev)) return true;
+    if (ev.startsWith("error") || ev.startsWith("captcha") || ev.startsWith("parse_")) {
+      return true;
+    }
+    return /(error|fail|crash|abort|blocker|captcha|session_lost)/i.test(
+      `${ev} ${alert.message}`
+    );
+  }
+
+  function alertIsRecent(alert) {
+    if (!alert) return false;
+    const ts = Number(alert.ts);
+    if (!Number.isFinite(ts) || ts <= 0) return true;
+    return Date.now() / 1000 - ts <= ALERT_RECENT_SEC;
+  }
+
+  function remoteForWorkspace(remotes, ws) {
+    if (!remotes || typeof remotes !== "object") return null;
+    return remotes[ws === "linkedin" ? "linkedin" : "hh"] || null;
+  }
+
+  function deriveLightState(ws, st) {
+    const status = String((st && st.status) || "idle");
+    const message = (st && st.message) || "";
+    const hasSession =
+      ws === "linkedin" ? !!(st && st.has_linkedin_session) : !!(st && st.has_session);
+    const busy =
+      ws === "linkedin"
+        ? !!(st && (st.busy_linkedin ?? st.busy))
+        : !!(st && (st.busy_hh ?? st.busy));
+    const remotes = (st && st.remote_browsers) || {};
+    const remote = remoteForWorkspace(remotes, ws);
+    const remoteErr = !!(remote && remote.error);
+    const remoteRun = !!(remote && remote.running);
+    const targets = workspaceTargets(message, status);
+    const forWs = targets.includes(ws);
+    const alert = st && st.last_alert;
+    const alertHits =
+      alertIsErrorLike(alert) &&
+      alertIsRecent(alert) &&
+      workspaceTargets(alert.message, alert.event).includes(ws);
+    const sessionBad = sessionLooksInvalid(status, message) && forWs;
+
+    // 1) Red — error / blocker
+    if (remoteErr) return "error";
+    if (status === "error" && forWs) return "error";
+    if (alertHits) return "error";
+
+    // 2) Yellow — browser/session not ready
+    const waiting =
+      (status === "waiting_user" || status === "logging_in") && forWs;
+    const remoteOff =
+      typeof remotes.enabled === "boolean" ? !remotes.enabled : false;
+    if (waiting || sessionBad || !hasSession || (remoteOff && !hasSession)) {
+      return "warn";
+    }
+
+    // 3) Green — work in progress on this workspace
+    if (busy || remoteRun) return "active";
+    const working = status === "searching" || status === "applying";
+    if (working && forWs) {
+      const otherBusy =
+        ws === "linkedin"
+          ? !!(st && st.busy_hh)
+          : !!(st && st.busy_linkedin);
+      if (!otherBusy) return "active";
+    }
+
+    // 4) Gray — idle / done, session ok
+    return "idle";
+  }
+
+  function paintStatusLight(el, light, nameKey) {
+    if (!el) return;
+    const state = light || "idle";
+    el.dataset.light = state;
+    const name = t(nameKey);
+    const stateLabel = t(`status.light.${state}`);
+    const title = t("status.light.title", { name, state: stateLabel });
+    el.title = title;
+    el.setAttribute("aria-label", title);
+  }
+
+  function paintStatusLights(st) {
+    const hh = deriveLightState("hh", st);
+    const li = deriveLightState("linkedin", st);
+    lastLightHh = hh;
+    lastLightLi = li;
+    paintStatusLight($("statusLightHh"), hh, "status.light.hh");
+    paintStatusLight($("statusLightLi"), li, "status.light.li");
+    const activeLight = workspace === "linkedin" ? li : hh;
+    if (statusPill) statusPill.dataset.light = activeLight;
+  }
+
   function setRemoteOverlay(keyOrText, isKey) {
     if (isKey) {
       remoteOverlayKey = keyOrText;
@@ -544,6 +669,10 @@
     const shell = document.querySelector(".shell");
     if (shell) shell.dataset.workspace = workspace;
     document.documentElement.dataset.workspace = workspace;
+    if (statusPill) {
+      statusPill.dataset.light =
+        workspace === "linkedin" ? lastLightLi : lastLightHh;
+    }
 
     document.querySelectorAll("[data-workspace-set]").forEach((btn) => {
       btn.setAttribute(
@@ -614,8 +743,11 @@
     lastBusyLi = !!(st.busy_linkedin ?? st.busy);
     lastHasSession = !!st.has_session;
     lastHasLiSession = !!st.has_linkedin_session;
+    lastAlert = st.last_alert || null;
+    lastRemoteBrowsers = st.remote_browsers || null;
     statusPill.dataset.status = status;
     statusLabel.textContent = statusDisplay(status);
+    paintStatusLights(st);
     setStatusMessage(st.message || "");
 
     const s = st.stats || {};
@@ -1648,6 +1780,16 @@
         ? t("stats.session_ok")
         : t("stats.session_no");
     }
+    paintStatusLights({
+      status: lastStatusCode,
+      message: lastStatusMessage,
+      busy_hh: lastBusyHh,
+      busy_linkedin: lastBusyLi,
+      has_session: lastHasSession,
+      has_linkedin_session: lastHasLiSession,
+      last_alert: lastAlert,
+      remote_browsers: lastRemoteBrowsers || {},
+    });
     updateSessionBanner({
       status: lastStatusCode,
       message: lastStatusMessage,

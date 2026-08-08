@@ -109,9 +109,25 @@
           <p class="brand">{{ app_name }}</p>
           <p class="tag" data-i18n="tagline">hh.ru / rabota.by · LinkedIn · launch-фильтры</p>
         </div>
-        <div class="status-wrap">
-          <div class="status-pill" id="statusPill" data-status="idle">
-            <span class="dot"></span>
+        <div class="status-wrap" id="statusLights" role="group"
+          data-i18n="status.lights.group" data-i18n-attr="aria-label"
+          aria-label="Индикаторы статуса">
+          <button type="button" class="status-light" id="statusLightHh"
+            data-light="idle" data-workspace="hh" disabled tabindex="-1"
+            data-i18n="status.light.hh" data-i18n-attr="aria-label"
+            aria-label="rabota.by / hh">
+            <span class="dot" aria-hidden="true"></span>
+            <span class="status-light-name">HH</span>
+          </button>
+          <button type="button" class="status-light" id="statusLightLi"
+            data-light="idle" data-workspace="linkedin" disabled tabindex="-1"
+            data-i18n="status.light.li" data-i18n-attr="aria-label"
+            aria-label="LinkedIn">
+            <span class="dot" aria-hidden="true"></span>
+            <span class="status-light-name">LI</span>
+          </button>
+          <div class="status-pill" id="statusPill" data-status="idle" data-light="idle">
+            <span class="dot" aria-hidden="true"></span>
             <span id="statusLabel">idle</span>
           </div>
         </div>
