@@ -7,22 +7,27 @@ import logging
 import time
 from datetime import datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
 from app.application.reports import assemble_report, normalize_kind
 from app.domain.ports import UnitOfWork
 from app.infrastructure.reports.pdf import write_report_pdf
 from app.infrastructure.settings import Settings
+from app.infrastructure.timefmt import resolve_tz, stamp_now
 
 log = logging.getLogger(__name__)
 
-
-def resolve_tz(name: str) -> ZoneInfo:
-    try:
-        return ZoneInfo(name or "Europe/Minsk")
-    except ZoneInfoNotFoundError:
-        log.warning("Unknown timezone %r — falling back to Europe/Minsk", name)
-        return ZoneInfo("Europe/Minsk")
+# Re-export for callers/tests that import resolve_tz from scheduler.
+__all__ = [
+    "resolve_tz",
+    "next_run_at",
+    "next_run_at_times",
+    "generate_scheduled_report",
+    "ReportScheduler",
+    "ParseScheduler",
+    "resolve_effective_parse_schedule",
+    "cron_bit",
+]
 
 
 def next_run_at(hour: int, minute: int, tz: ZoneInfo, *, now: datetime | None = None) -> datetime:
@@ -52,6 +57,96 @@ def next_run_at_times(
             candidate = candidate + timedelta(days=1)
         candidates.append(candidate)
     return min(candidates)
+
+
+# cron_job_rules indices (left→right)
+BIT_HH_SEARCH = 0
+BIT_HH_APPLY = 1
+BIT_LI_VACANCIES = 2
+BIT_LI_NETWORK = 3
+
+
+def cron_bit(rules: str | None, index: int) -> bool:
+    bits = (rules or "0000") + "0000"
+    return bits[index] == "1"
+
+
+def resolve_effective_parse_schedule(settings: Settings) -> dict[str, Any]:
+    """
+    Merge launch.schedule with env PARSE_SCHEDULE_*.
+
+    - Env PARSE_SCHEDULE_ENABLED is a kill-switch (must be true to run).
+    - Profile schedule supplies times / timezone / bitmask / email flag.
+    - Env times/timezone used as fallback when profile schedule is absent.
+    - SERP knobs and profile name stay env-driven.
+    """
+    from app.domain.launch_profile import load_launch_profile
+    from app.infrastructure.settings import parse_schedule_times_list
+
+    env = settings.parse_parse_schedule()
+    notes = list(env.get("notifications") or [])
+    launch = load_launch_profile(settings.launch_path)
+    sched = launch.schedule if launch else None
+
+    if sched is None:
+        rules = "1010"  # legacy: HH search + LI vacancies
+        return {
+            **env,
+            "cron_job_rules": rules,
+            "email_report_after_run": True,
+            "hh_search": cron_bit(rules, BIT_HH_SEARCH),
+            "hh_apply": cron_bit(rules, BIT_HH_APPLY),
+            "li_vacancies": cron_bit(rules, BIT_LI_VACANCIES),
+            "li_network": cron_bit(rules, BIT_LI_NETWORK),
+            "source": "env",
+            "notifications": notes,
+        }
+
+    # Kill-switch: env must allow the scheduler process.
+    enabled = bool(settings.parse_schedule_enabled) and bool(sched.enabled)
+    if not settings.parse_schedule_enabled:
+        notes.append(
+            "PARSE_SCHEDULE_ENABLED=false — kill-switch; profile schedule ignored for firing"
+        )
+    elif not sched.enabled:
+        notes.append("launch.schedule.enabled=false — scheduled parse idle")
+
+    times_raw = ",".join(sched.times) if sched.times else settings.parse_schedule_times
+    times, time_notes = parse_schedule_times_list(times_raw)
+    notes.extend(time_notes)
+    tz = (sched.timezone or env.get("timezone") or "Europe/Minsk").strip()
+    rules = sched.cron_job_rules or "1111"
+
+    return {
+        "enabled": enabled,
+        "timezone": tz,
+        "times": times,
+        "times_display": ",".join(f"{h:02d}:{m:02d}" for h, m in times),
+        "profile": env["profile"],
+        "early_stop_enabled": env["early_stop_enabled"],
+        "old_streak_stop": env["old_streak_stop"],
+        "max_serp_pages": env["max_serp_pages"],
+        "dup_page_stop": env["dup_page_stop"],
+        "cron_job_rules": rules,
+        "email_report_after_run": bool(sched.email_report_after_run),
+        "hh_search": cron_bit(rules, BIT_HH_SEARCH),
+        "hh_apply": cron_bit(rules, BIT_HH_APPLY),
+        "li_vacancies": cron_bit(rules, BIT_LI_VACANCIES),
+        "li_network": cron_bit(rules, BIT_LI_NETWORK),
+        "workspaces": [
+            name
+            for name, on in (
+                ("hh", cron_bit(rules, BIT_HH_SEARCH) or cron_bit(rules, BIT_HH_APPLY)),
+                (
+                    "linkedin",
+                    cron_bit(rules, BIT_LI_VACANCIES) or cron_bit(rules, BIT_LI_NETWORK),
+                ),
+            )
+            if on
+        ],
+        "source": "launch+env",
+        "notifications": notes,
+    }
 
 
 def _maybe_email_report(
@@ -136,7 +231,7 @@ def generate_scheduled_report(
     send_mail = scheduled if email is None else bool(email)
     settings.ensure_dirs()
     payload = assemble_report(uow, settings, kind, profile)
-    stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())
+    stamp = stamp_now(settings=settings)
     out = settings.reports_dir / f"auto-apply-app-{kind}-{profile}-{stamp}.pdf"
     write_report_pdf(payload, out)
     uow.report_files.record(profile, kind, str(out), scheduled=scheduled)
@@ -267,10 +362,10 @@ class ReportScheduler:
 
 class ParseScheduler:
     """
-    Async loop for vacancy parsing at PARSE_SCHEDULE_TIMES (e.g. 12:00 + 00:00).
+    Async loop for vacancy jobs at launch.schedule times (env kill-switch).
 
-    Runs HH search and/or LinkedIn vacancy collect when sessions exist
-    (prefer both). Same in-process constraint as ReportScheduler.
+    Bitmask cron_job_rules: HH search, HH apply, LI vacancies, LI network.
+    Same in-process constraint as ReportScheduler.
     """
 
     def __init__(self, uow: UnitOfWork, settings: Settings, runner: Any) -> None:
@@ -285,7 +380,7 @@ class ParseScheduler:
         self.last_result: dict[str, Any] | None = None
 
     def status(self) -> dict[str, Any]:
-        sched = self.settings.parse_parse_schedule()
+        sched = resolve_effective_parse_schedule(self.settings)
         return {
             **sched,
             "running": bool(self._task and not self._task.done()),
@@ -313,8 +408,8 @@ class ParseScheduler:
 
     async def _loop(self) -> None:
         while not self._stop.is_set():
-            sched = self.settings.parse_parse_schedule()
-            if not sched["enabled"]:
+            # Env kill-switch: do not keep looping if process-level flag is off.
+            if not self.settings.parse_schedule_enabled:
                 self.next_run_iso = None
                 try:
                     await asyncio.wait_for(self._stop.wait(), timeout=60.0)
@@ -322,13 +417,23 @@ class ParseScheduler:
                     continue
                 break
 
+            sched = resolve_effective_parse_schedule(self.settings)
+            if not sched["enabled"]:
+                self.next_run_iso = None
+                try:
+                    await asyncio.wait_for(self._stop.wait(), timeout=60.0)
+                except TimeoutError:
+                    continue
+                continue
+
             tz = resolve_tz(sched["timezone"])
             nxt = next_run_at_times(list(sched["times"]), tz)
             self.next_run_iso = nxt.isoformat()
             delay = max(1.0, (nxt - datetime.now(tz)).total_seconds())
             log.info(
-                "Parse scheduler: next run at %s (sleep %.0fs)",
+                "Parse scheduler: next run at %s rules=%s (sleep %.0fs)",
                 self.next_run_iso,
+                sched.get("cron_job_rules"),
                 delay,
             )
             try:
@@ -339,6 +444,10 @@ class ParseScheduler:
 
             if self._stop.is_set():
                 break
+            # Re-resolve so UI-saved launch.schedule applies without redeploy.
+            sched = resolve_effective_parse_schedule(self.settings)
+            if not sched["enabled"]:
+                continue
             try:
                 result = await self._fire(sched)
                 self.last_run_at = time.time()
@@ -390,85 +499,196 @@ class ParseScheduler:
                 continue
         return False
 
+    async def _start_job(
+        self,
+        *,
+        profile: str,
+        service: str,
+        label: str,
+        start_fn: Any,
+        started: list[str],
+        skipped: list[str],
+        errors: list[str],
+        wait_services: list[str],
+    ) -> None:
+        if self.runner.is_busy(profile, service):
+            errors.append(f"{label}:busy")
+            skipped.append(label)
+            return
+        res = start_fn(profile)
+        if res.get("ok"):
+            started.append(label)
+            if service not in wait_services:
+                wait_services.append(service)
+        else:
+            errors.append(f"{label}:{res.get('error')}")
+            skipped.append(label)
+
     async def _fire(self, sched: dict[str, Any]) -> dict[str, Any]:
         profile = self.uow.profiles.resolve_profile(sched.get("profile"))
         hh_path = self.settings.state_path(profile)
         li_path = self.settings.linkedin_state_path(profile)
         has_hh = hh_path.exists()
         has_li = li_path.exists()
+        want_hh_search = bool(sched.get("hh_search"))
+        want_hh_apply = bool(sched.get("hh_apply"))
+        want_li_vac = bool(sched.get("li_vacancies"))
+        want_li_net = bool(sched.get("li_network"))
 
         self.uow.journal.log(
             profile,
             "parse_scheduled",
-            f"start hh={has_hh} linkedin={has_li} times={sched.get('times_display')}",
+            (
+                f"start rules={sched.get('cron_job_rules')} "
+                f"hh={has_hh} linkedin={has_li} times={sched.get('times_display')}"
+            ),
             payload={
                 "hh": has_hh,
                 "linkedin": has_li,
                 "timezone": sched.get("timezone"),
+                "cron_job_rules": sched.get("cron_job_rules"),
             },
         )
 
         started: list[str] = []
         skipped: list[str] = []
         errors: list[str] = []
+        emailed = False
 
-        if not has_hh and not has_li:
-            msg = "no browser sessions — skip scheduled parse"
+        need_hh = (want_hh_search or want_hh_apply) and has_hh
+        need_li = (want_li_vac or want_li_net) and has_li
+        if not need_hh and not need_li:
+            msg = "no sessions or no jobs enabled in cron_job_rules — skip"
             self.uow.journal.log(profile, "parse_scheduled_skip", msg, level="warning")
-            return {"ok": False, "error": msg, "started": [], "skipped": ["hh", "linkedin"]}
+            return {
+                "ok": False,
+                "error": msg,
+                "started": [],
+                "skipped": ["hh_search", "hh_apply", "li_vacancies", "li_network"],
+                "emailed": False,
+            }
 
-        # Wait until both workspace slots are free (HH job must not block LI start).
         if not await self._wait_idle(profile, timeout=600.0):
             msg = "profile busy — deferred parse aborted"
             self.uow.journal.log(profile, "parse_scheduled_busy", msg, level="warning")
-            return {"ok": False, "error": msg, "started": started, "skipped": skipped}
+            return {
+                "ok": False,
+                "error": msg,
+                "started": started,
+                "skipped": skipped,
+                "emailed": False,
+            }
 
+        # Wave 1: HH search + LI vacancies (parallel workspaces).
         wait_services: list[str] = []
-
-        if has_hh:
-            if self.runner.is_busy(profile, "hh"):
-                errors.append("hh:busy")
-                skipped.append("hh")
-            else:
-                res = self.runner.start_search(profile)
-                if res.get("ok"):
-                    started.append("hh")
-                    wait_services.append("hh")
-                else:
-                    errors.append(f"hh:{res.get('error')}")
-                    skipped.append("hh")
+        if want_hh_search and has_hh:
+            await self._start_job(
+                profile=profile,
+                service="hh",
+                label="hh_search",
+                start_fn=self.runner.start_search,
+                started=started,
+                skipped=skipped,
+                errors=errors,
+                wait_services=wait_services,
+            )
+        elif want_hh_search:
+            skipped.append("hh_search")
         else:
-            skipped.append("hh")
+            skipped.append("hh_search")
 
-        if has_li:
-            if self.runner.is_busy(profile, "linkedin"):
-                errors.append("linkedin:busy")
-                skipped.append("linkedin")
-            else:
-                res = self.runner.start_linkedin_vacancies(profile)
-                if res.get("ok"):
-                    started.append("linkedin")
-                    wait_services.append("linkedin")
-                else:
-                    errors.append(f"linkedin:{res.get('error')}")
-                    skipped.append("linkedin")
+        if want_li_vac and has_li:
+            await self._start_job(
+                profile=profile,
+                service="linkedin",
+                label="li_vacancies",
+                start_fn=self.runner.start_linkedin_vacancies,
+                started=started,
+                skipped=skipped,
+                errors=errors,
+                wait_services=wait_services,
+            )
+        elif want_li_vac:
+            skipped.append("li_vacancies")
         else:
-            skipped.append("linkedin")
+            skipped.append("li_vacancies")
 
-        for svc in wait_services:
+        for svc in list(wait_services):
             if self._stop.is_set():
                 break
             await self._wait_idle(profile, service=svc)
 
+        # Wave 2: HH apply + LI network (after search/collect on each workspace).
+        wait_services = []
+        if want_hh_apply and has_hh:
+            await self._start_job(
+                profile=profile,
+                service="hh",
+                label="hh_apply",
+                start_fn=self.runner.start_apply,
+                started=started,
+                skipped=skipped,
+                errors=errors,
+                wait_services=wait_services,
+            )
+        elif want_hh_apply:
+            skipped.append("hh_apply")
+        else:
+            skipped.append("hh_apply")
+
+        if want_li_net and has_li:
+            await self._start_job(
+                profile=profile,
+                service="linkedin",
+                label="li_network",
+                start_fn=self.runner.start_linkedin_network,
+                started=started,
+                skipped=skipped,
+                errors=errors,
+                wait_services=wait_services,
+            )
+        elif want_li_net:
+            skipped.append("li_network")
+        else:
+            skipped.append("li_network")
+
+        for svc in list(wait_services):
+            if self._stop.is_set():
+                break
+            await self._wait_idle(profile, service=svc)
+
+        if sched.get("email_report_after_run"):
+            try:
+                report = await asyncio.to_thread(
+                    generate_scheduled_report,
+                    self.uow,
+                    self.settings,
+                    kind="work",
+                    profile=profile,
+                    scheduled=True,
+                    email=True,
+                )
+                emailed = bool(report.get("emailed"))
+            except Exception as e:
+                log.warning("Post-parse report email failed: %s", e)
+                errors.append(f"email:{e}")
+
         self.uow.journal.log(
             profile,
             "parse_scheduled_done",
-            f"started={started} skipped={skipped} errors={errors}",
-            payload={"started": started, "skipped": skipped, "errors": errors},
+            f"started={started} skipped={skipped} errors={errors} emailed={emailed}",
+            payload={
+                "started": started,
+                "skipped": skipped,
+                "errors": errors,
+                "emailed": emailed,
+                "cron_job_rules": sched.get("cron_job_rules"),
+            },
         )
         return {
             "ok": not errors,
             "started": started,
             "skipped": skipped,
             "errors": errors,
+            "emailed": emailed,
         }

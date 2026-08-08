@@ -113,3 +113,5 @@ Journal:
 Smoke без ожидания полуночи: один ближайший `HH:MM` в `PARSE_SCHEDULE_TIMES` и соседний час/минута для report — см. [getting-started.md](./getting-started.md).
 
 При ошибке scheduled parse дополнительно уходит алерт `parse_schedule_error` (если включены error/parse-fail флаги).
+
+После успешного parse-cron (если в `launch.json` → `schedule.email_report_after_run: true`) отправляется тот же HTML+PDF отчёт, что и у `REPORT_SCHEDULE_*` (канал `ALERT_SMTP_*`).

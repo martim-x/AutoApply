@@ -452,8 +452,35 @@
           <svg class="ico" aria-hidden="true"><use href="#i-x"/></svg>
         </button>
       </div>
-      <p class="launch-desc" data-i18n="launch.label">Параметры запуска (строгий формат → config/launch.json)</p>
+      <p class="launch-desc" data-i18n="launch.label">Параметры запуска (строгий формат → launch.json на DATA_DIR)</p>
       <textarea id="launchText" class="launch-text" rows="12" spellcheck="false" data-i18n="launch.aria" data-i18n-attr="aria-label"></textarea>
+      <details class="launch-schedule" id="launchScheduleBox">
+        <summary data-i18n="launch.schedule.title">Расписание cron</summary>
+        <p class="launch-desc" data-i18n="launch.schedule.hint">Сохраняется в launch.json · PARSE_SCHEDULE_ENABLED — kill-switch в env</p>
+        <label class="launch-sched-row">
+          <input type="checkbox" id="schedEnabled" checked />
+          <span data-i18n="launch.schedule.enabled">Включено в профиле</span>
+        </label>
+        <label class="launch-sched-row">
+          <span data-i18n="launch.schedule.timezone">Timezone</span>
+          <input type="text" id="schedTimezone" value="Europe/Minsk" autocomplete="off" />
+        </label>
+        <label class="launch-sched-row">
+          <span data-i18n="launch.schedule.times">Времена (HH:MM)</span>
+          <input type="text" id="schedTimes" value="00:00, 12:00" autocomplete="off" />
+        </label>
+        <fieldset class="launch-sched-bits">
+          <legend data-i18n="launch.schedule.bits">Задачи (bitmask)</legend>
+          <label><input type="checkbox" id="schedBitHhSearch" checked /> HH search</label>
+          <label><input type="checkbox" id="schedBitHhApply" checked /> HH apply</label>
+          <label><input type="checkbox" id="schedBitLiVac" checked /> LI vacancies</label>
+          <label><input type="checkbox" id="schedBitLiNet" checked /> LI network</label>
+        </fieldset>
+        <label class="launch-sched-row">
+          <input type="checkbox" id="schedEmail" checked />
+          <span data-i18n="launch.schedule.email">Email HTML+PDF после cron</span>
+        </label>
+      </details>
       <div class="actions launch-actions">
         <button type="button" id="btnLaunchValidate" class="ghost touch">
           <svg class="ico" aria-hidden="true"><use href="#i-check"/></svg>

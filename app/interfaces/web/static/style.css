@@ -1045,6 +1045,54 @@ a:hover { text-decoration: underline; }
   max-height: min(50vh, 28rem);
   box-sizing: border-box;
 }
+.launch-schedule {
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--launch-bg);
+}
+.launch-schedule > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: var(--font-ui);
+  list-style: disclosure-closed;
+}
+.launch-schedule[open] > summary {
+  margin-bottom: var(--space-2);
+}
+.launch-sched-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+  font-size: var(--font-ui);
+}
+.launch-sched-row input[type="text"] {
+  flex: 1 1 12rem;
+  min-height: var(--touch);
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text);
+  font: inherit;
+}
+.launch-sched-bits {
+  margin: var(--space-2) 0;
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: var(--space-1);
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  font-size: var(--font-ui);
+}
+.launch-sched-bits legend {
+  padding: 0 var(--space-1);
+  font-weight: 600;
+}
 .launch-actions {
   display: grid;
   margin-top: var(--space-3);

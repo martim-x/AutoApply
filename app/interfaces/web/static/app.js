@@ -1653,10 +1653,58 @@
     syncActionLabelsCached();
   }
 
+  function fillScheduleFields(launch) {
+    const sched = (launch && launch.schedule) || {};
+    const rules = String(sched.cron_job_rules || "1111").padEnd(4, "0");
+    const en = $("schedEnabled");
+    if (en) en.checked = sched.enabled !== false;
+    const tz = $("schedTimezone");
+    if (tz) tz.value = sched.timezone || "Europe/Minsk";
+    const times = $("schedTimes");
+    if (times) {
+      times.value = Array.isArray(sched.times)
+        ? sched.times.join(", ")
+        : String(sched.times || "00:00, 12:00");
+    }
+    const bits = [
+      ["schedBitHhSearch", 0],
+      ["schedBitHhApply", 1],
+      ["schedBitLiVac", 2],
+      ["schedBitLiNet", 3],
+    ];
+    for (const [id, i] of bits) {
+      const el = $(id);
+      if (el) el.checked = rules[i] === "1";
+    }
+    const email = $("schedEmail");
+    if (email) email.checked = sched.email_report_after_run !== false;
+  }
+
+  function readScheduleFromFields() {
+    const bit = (id) => ($(id) && $(id).checked ? "1" : "0");
+    const timesRaw = ($("schedTimes") && $("schedTimes").value) || "00:00, 12:00";
+    const times = timesRaw
+      .split(/[,;]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return {
+      enabled: !!($("schedEnabled") && $("schedEnabled").checked),
+      timezone: (($("schedTimezone") && $("schedTimezone").value) || "Europe/Minsk").trim(),
+      times: times.length ? times : ["00:00", "12:00"],
+      cron_job_rules:
+        bit("schedBitHhSearch") +
+        bit("schedBitHhApply") +
+        bit("schedBitLiVac") +
+        bit("schedBitLiNet"),
+      email_report_after_run: !!($("schedEmail") && $("schedEmail").checked),
+    };
+  }
+
   async function refreshLaunch() {
     const data = await api("/api/launch");
     if (data.strict_text) $("launchText").value = data.strict_text;
     updateLaunchMeta(data.launch);
+    fillScheduleFields(data.launch);
     return data;
   }
 
@@ -1707,8 +1755,10 @@
         setLaunchMessage(r.error || t("launch.err.validate"), false);
         return;
       }
+      const launch = { ...(r.launch || {}), schedule: readScheduleFromFields() };
       setLaunchMessage(t("launch.ok"), true);
-      updateLaunchMeta(r.launch);
+      updateLaunchMeta(launch);
+      fillScheduleFields(launch);
     } catch (e) {
       setLaunchMessage(String(e.message || e), false);
     }
@@ -1716,9 +1766,18 @@
 
   $("btnLaunchSave").onclick = async () => {
     try {
-      const r = await api("/api/launch/text", {
+      const parsed = await api("/api/launch/validate", {
         method: "POST",
         body: JSON.stringify({ text: $("launchText").value }),
+      });
+      if (!parsed.ok) {
+        setLaunchMessage(parsed.error || t("launch.err.save"), false);
+        return;
+      }
+      const launch = { ...(parsed.launch || {}), schedule: readScheduleFromFields() };
+      const r = await api("/api/launch/json", {
+        method: "POST",
+        body: JSON.stringify({ launch }),
       });
       if (!r.ok) {
         setLaunchMessage(r.error || t("launch.err.save"), false);
@@ -1726,6 +1785,7 @@
       }
       if (r.strict_text) $("launchText").value = r.strict_text;
       updateLaunchMeta(r.launch);
+      fillScheduleFields(r.launch);
       setLaunchMessage(t("launch.saved", { path: r.path }), true);
       const cfg = await api("/api/config");
       $("cfgHint").textContent = `${cfg.app_name} · ${cfg.base_url || ""}`.trim();
