@@ -890,7 +890,7 @@
   }
 
   async function refreshVacancies() {
-    const data = await api(`/api/vacancies?profile=${encodeURIComponent(profile())}&limit=80`);
+    const data = await api(`/api/vacancies?profile=${encodeURIComponent(profile())}&limit=10000`);
     const body = $("vacBody");
     const cards = $("vacCards");
     body.innerHTML = "";

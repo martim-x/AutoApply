@@ -1119,9 +1119,30 @@ html.modal-open body {
   padding: 0.4rem 0.65rem;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--bg, #fff);
-  color: inherit;
+  background: var(--input-bg);
+  color: var(--text);
   font: inherit;
+  color-scheme: inherit;
+}
+.launch-sched-row input[type="text"]::placeholder,
+.launch-sched-row input[type="search"]::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.launch-sched-row input[type="text"]:-webkit-autofill,
+.launch-sched-row input[type="text"]:-webkit-autofill:hover,
+.launch-sched-row input[type="text"]:-webkit-autofill:focus,
+.launch-sched-row input[type="search"]:-webkit-autofill,
+.launch-sched-row input[type="search"]:-webkit-autofill:hover,
+.launch-sched-row input[type="search"]:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text);
+  caret-color: var(--text);
+  box-shadow: 0 0 0 1000px var(--input-bg) inset;
+  transition: background-color 99999s ease-out;
+}
+.launch-sched-row select option {
+  background: var(--panel);
+  color: var(--text);
 }
 .launch-sched-tz {
   align-items: stretch;
@@ -1138,9 +1159,6 @@ html.modal-open body {
   margin: 0 0 var(--space-2);
   font-size: var(--font-tiny, 0.8rem);
   opacity: 0.85;
-  background: var(--input-bg);
-  color: var(--text);
-  font: inherit;
 }
 .launch-sched-bits {
   margin: var(--space-2) 0;
