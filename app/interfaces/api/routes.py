@@ -105,7 +105,9 @@ def create_api_router() -> APIRouter:
     ) -> dict[str, Any]:
         result = svc(request).rename_profile(name, body.new_name)
         if not result.get("ok"):
-            raise HTTPException(status_code=400, detail=result.get("error") or "rename failed")
+            raise HTTPException(
+                status_code=400, detail=result.get("error") or "rename failed"
+            )
         return result
 
     @router.post("/profiles/rename")
@@ -114,14 +116,18 @@ def create_api_router() -> APIRouter:
     ) -> dict[str, Any]:
         result = svc(request).rename_profile(body.name, body.new_name)
         if not result.get("ok"):
-            raise HTTPException(status_code=400, detail=result.get("error") or "rename failed")
+            raise HTTPException(
+                status_code=400, detail=result.get("error") or "rename failed"
+            )
         return result
 
     @router.delete("/profiles/{name}")
     def delete_profile(name: str, request: Request) -> dict[str, Any]:
         result = svc(request).delete_profile(name)
         if not result.get("ok"):
-            raise HTTPException(status_code=400, detail=result.get("error") or "delete failed")
+            raise HTTPException(
+                status_code=400, detail=result.get("error") or "delete failed"
+            )
         return result
 
     @router.get("/status")
@@ -142,7 +148,7 @@ def create_api_router() -> APIRouter:
     def vacancies(
         request: Request,
         profile: str = Query(default="default"),
-        limit: int = Query(default=100, ge=1, le=500),
+        limit: int = Query(default=100, ge=1, le=10_000),
     ) -> dict[str, Any]:
         return {"vacancies": svc(request).list_vacancies(profile, limit=limit)}
 
@@ -153,15 +159,13 @@ def create_api_router() -> APIRouter:
         vacancy_id: int | None = Query(default=None),
         url: str | None = Query(default=None),
     ) -> dict[str, Any]:
-        return svc(request).explain_vacancy(
-            profile, vacancy_id=vacancy_id, url=url
-        )
+        return svc(request).explain_vacancy(profile, vacancy_id=vacancy_id, url=url)
 
     @router.get("/logs")
     def logs(
         request: Request,
         profile: str = Query(default="default"),
-        limit: int = Query(default=60, ge=1, le=10000),
+        limit: int = Query(default=10_000, ge=1, le=100_000),
         service: str | None = Query(default=None),
     ) -> dict[str, Any]:
         journal_service = (service or "").strip().lower() or None
@@ -182,9 +186,7 @@ def create_api_router() -> APIRouter:
 
     @router.post("/login/confirm")
     def login_confirm(body: WorkspaceBody, request: Request) -> dict[str, Any]:
-        return svc(request).confirm_login(
-            body.profile, workspace=body.workspace
-        )
+        return svc(request).confirm_login(body.profile, workspace=body.workspace)
 
     @router.post("/search")
     def search(body: ProfileBody, request: Request) -> dict[str, Any]:
@@ -210,15 +212,11 @@ def create_api_router() -> APIRouter:
 
     @router.post("/remote-browser/start")
     def remote_browser_start(body: WorkspaceBody, request: Request) -> dict[str, Any]:
-        return svc(request).start_remote_browser(
-            body.profile, workspace=body.workspace
-        )
+        return svc(request).start_remote_browser(body.profile, workspace=body.workspace)
 
     @router.post("/remote-browser/save")
     def remote_browser_save(body: WorkspaceBody, request: Request) -> dict[str, Any]:
-        return svc(request).save_remote_browser(
-            body.profile, workspace=body.workspace
-        )
+        return svc(request).save_remote_browser(body.profile, workspace=body.workspace)
 
     @router.post("/remote-browser/stop")
     def remote_browser_stop(body: RemoteStopBody, request: Request) -> dict[str, Any]:
@@ -262,21 +260,17 @@ def create_api_router() -> APIRouter:
     def linkedin_contacts(
         request: Request,
         profile: str = Query(default="default"),
-        limit: int = Query(default=100, ge=1, le=500),
+        limit: int = Query(default=100, ge=1, le=10_000),
     ) -> dict[str, Any]:
-        return {
-            "contacts": svc(request).list_linkedin_contacts(profile, limit=limit)
-        }
+        return {"contacts": svc(request).list_linkedin_contacts(profile, limit=limit)}
 
     @router.get("/linkedin/vacancies")
     def linkedin_vacancies(
         request: Request,
         profile: str = Query(default="default"),
-        limit: int = Query(default=100, ge=1, le=500),
+        limit: int = Query(default=100, ge=1, le=10_000),
     ) -> dict[str, Any]:
-        return {
-            "vacancies": svc(request).list_linkedin_vacancies(profile, limit=limit)
-        }
+        return {"vacancies": svc(request).list_linkedin_vacancies(profile, limit=limit)}
 
     @router.websocket("/remote-browser/ws")
     async def remote_browser_ws(
