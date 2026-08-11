@@ -355,7 +355,7 @@
             <svg class="ico" aria-hidden="true"><use href="#i-expand"/></svg>
           </button>
         </div>
-        <div class="table-wrap desktop-only">
+        <div class="table-wrap desktop-only" id="vacTableWrap">
           <table>
             <thead>
               <tr>
@@ -371,6 +371,8 @@
           </table>
         </div>
         <div class="vac-cards" id="vacCards" aria-live="polite"></div>
+        <button type="button" class="ghost touch log-more-btn" id="vacMoreBtn" data-load-more="vac"
+          data-i18n="load.more" hidden>Показать ещё</button>
       </div>
       <div class="panel panel-log panel-resizable" id="hhLogPanel" data-panel-size="hh-log">
         <div class="panel-head">
@@ -382,6 +384,8 @@
           </button>
         </div>
         <ul class="log" id="logList"></ul>
+        <button type="button" class="ghost touch log-more-btn" id="logMoreBtn" data-load-more="log"
+          data-i18n="load.more" hidden>Показать ещё</button>
       </div>
     </section>
 
@@ -408,6 +412,8 @@
             <tbody id="liContactBody"></tbody>
           </table>
         </div>
+        <button type="button" class="ghost touch log-more-btn" id="liContactMoreBtn" data-load-more="liContact"
+          data-i18n="load.more" hidden>Показать ещё</button>
       </div>
       <div class="panel panel-resizable" id="liVacPanel" data-panel-size="li-vac" hidden>
         <div class="panel-head">
@@ -431,6 +437,8 @@
             <tbody id="liVacBody"></tbody>
           </table>
         </div>
+        <button type="button" class="ghost touch log-more-btn" id="liVacMoreBtn" data-load-more="liVac"
+          data-i18n="load.more" hidden>Показать ещё</button>
       </div>
       <div class="panel panel-log panel-resizable" id="liLogPanel" data-panel-size="li-log">
         <div class="panel-head">
@@ -442,6 +450,8 @@
           </button>
         </div>
         <ul class="log" id="liLogList"></ul>
+        <button type="button" class="ghost touch log-more-btn" id="liLogMoreBtn" data-load-more="liLog"
+          data-i18n="load.more" hidden>Показать ещё</button>
       </div>
     </section>
 

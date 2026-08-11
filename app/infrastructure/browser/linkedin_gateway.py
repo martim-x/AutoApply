@@ -31,7 +31,11 @@ from app.domain.parse_dedup import (
     should_stop_old_streak,
 )
 from app.domain.ports import UnitOfWork
-from app.infrastructure.browser.launch import launch_chromium, user_facing_browser_error
+from app.infrastructure.browser.launch import (
+    browser_context_kwargs,
+    launch_chromium,
+    user_facing_browser_error,
+)
 from app.infrastructure.browser.linkedin_selectors import LI_SEL
 from app.infrastructure.settings import Settings
 
@@ -556,10 +560,7 @@ class LinkedInBrowserGateway:
     def _launch(self, p: Any, profile: str) -> tuple[Any, Any, Any]:
         s = self.settings
         sp = s.linkedin_state_path(profile)
-        kwargs: dict[str, Any] = {
-            "locale": "en-US",
-            "viewport": {"width": 1280, "height": 900},
-        }
+        kwargs = browser_context_kwargs(s, locale="en-US")
         browser = launch_chromium(p, headless=s.effective_headless())
         if sp.exists():
             context = browser.new_context(storage_state=str(sp), **kwargs)

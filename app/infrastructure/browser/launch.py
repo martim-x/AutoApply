@@ -8,6 +8,39 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
+# Masks the "controlled by automation" flag bots rely on (also drops the
+# "Chrome is being controlled by automated test software" infobar).
+ANTI_AUTOMATION_ARGS: tuple[str, ...] = (
+    "--disable-blink-features=AutomationControlled",
+    "--disable-infobars",
+    "--no-sandbox",
+    "--disable-dev-shm-usage",
+)
+
+DEFAULT_VIEWPORT: dict[str, int] = {"width": 1280, "height": 900}
+
+
+def browser_context_kwargs(
+    settings: Any,
+    *,
+    locale: str = "ru-RU",
+    viewport: dict[str, int] | None = None,
+) -> dict[str, Any]:
+    """Shared new_context kwargs: locale, viewport, color scheme, UA + timezone."""
+    kwargs: dict[str, Any] = {
+        "locale": locale,
+        "viewport": viewport or DEFAULT_VIEWPORT,
+        "color_scheme": "light",
+        "extra_http_headers": {"Accept-Language": locale},
+    }
+    ua = (getattr(settings, "browser_user_agent", "") or "").strip()
+    if ua:
+        kwargs["user_agent"] = ua
+    tz = (getattr(settings, "browser_timezone", "") or "").strip()
+    if tz:
+        kwargs["timezone_id"] = tz
+    return kwargs
+
 
 def sanitize_playwright_browsers_path() -> str | None:
     """
@@ -78,9 +111,23 @@ def launch_chromium(playwright: Any, *, headless: bool = True):
     sanitize_playwright_browsers_path()
     errors: list[str] = []
     attempts: list[dict[str, Any]] = [
-        {"headless": headless},
-        {"channel": "chrome", "headless": headless},
-        {"channel": "chromium", "headless": headless},
+        {
+            "headless": headless,
+            "args": list(ANTI_AUTOMATION_ARGS),
+            "ignore_default_args": ["--enable-automation"],
+        },
+        {
+            "channel": "chrome",
+            "headless": headless,
+            "args": list(ANTI_AUTOMATION_ARGS),
+            "ignore_default_args": ["--enable-automation"],
+        },
+        {
+            "channel": "chromium",
+            "headless": headless,
+            "args": list(ANTI_AUTOMATION_ARGS),
+            "ignore_default_args": ["--enable-automation"],
+        },
     ]
     for kwargs in attempts:
         try:

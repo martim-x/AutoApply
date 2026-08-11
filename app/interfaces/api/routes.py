@@ -149,8 +149,10 @@ def create_api_router() -> APIRouter:
         request: Request,
         profile: str = Query(default="default"),
         limit: int = Query(default=100, ge=1, le=10_000),
+        offset: int = Query(default=0, ge=0),
     ) -> dict[str, Any]:
-        return {"vacancies": svc(request).list_vacancies(profile, limit=limit)}
+        rows = svc(request).list_vacancies(profile, limit=limit + 1, offset=offset)
+        return {"vacancies": rows[:limit], "has_more": len(rows) > limit}
 
     @router.get("/vacancies/explain")
     def vacancy_explain(
@@ -165,7 +167,8 @@ def create_api_router() -> APIRouter:
     def logs(
         request: Request,
         profile: str = Query(default="default"),
-        limit: int = Query(default=10_000, ge=1, le=100_000),
+        limit: int = Query(default=100, ge=1, le=100_000),
+        offset: int = Query(default=0, ge=0),
         service: str | None = Query(default=None),
     ) -> dict[str, Any]:
         journal_service = (service or "").strip().lower() or None
@@ -173,10 +176,15 @@ def create_api_router() -> APIRouter:
             raise HTTPException(
                 status_code=400, detail="service must be hh or linkedin"
             )
+        rows = svc(request).recent_logs(
+            profile,
+            limit=limit + 1,
+            offset=offset,
+            service=journal_service,
+        )
         return {
-            "logs": svc(request).recent_logs(
-                profile, limit=limit, service=journal_service
-            ),
+            "logs": rows[:limit],
+            "has_more": len(rows) > limit,
             "service": journal_service,
         }
 
@@ -261,16 +269,24 @@ def create_api_router() -> APIRouter:
         request: Request,
         profile: str = Query(default="default"),
         limit: int = Query(default=100, ge=1, le=10_000),
+        offset: int = Query(default=0, ge=0),
     ) -> dict[str, Any]:
-        return {"contacts": svc(request).list_linkedin_contacts(profile, limit=limit)}
+        rows = svc(request).list_linkedin_contacts(
+            profile, limit=limit + 1, offset=offset
+        )
+        return {"contacts": rows[:limit], "has_more": len(rows) > limit}
 
     @router.get("/linkedin/vacancies")
     def linkedin_vacancies(
         request: Request,
         profile: str = Query(default="default"),
         limit: int = Query(default=100, ge=1, le=10_000),
+        offset: int = Query(default=0, ge=0),
     ) -> dict[str, Any]:
-        return {"vacancies": svc(request).list_linkedin_vacancies(profile, limit=limit)}
+        rows = svc(request).list_linkedin_vacancies(
+            profile, limit=limit + 1, offset=offset
+        )
+        return {"vacancies": rows[:limit], "has_more": len(rows) > limit}
 
     @router.websocket("/remote-browser/ws")
     async def remote_browser_ws(

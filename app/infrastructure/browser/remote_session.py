@@ -13,7 +13,11 @@ from typing import Any
 
 from app.domain.enums import JobStatus
 from app.domain.ports import UnitOfWork
-from app.infrastructure.browser.launch import launch_chromium, user_facing_browser_error
+from app.infrastructure.browser.launch import (
+    browser_context_kwargs,
+    launch_chromium,
+    user_facing_browser_error,
+)
 from app.infrastructure.browser.workspace import (
     browser_slot_key,
     normalize_workspace,
@@ -363,10 +367,11 @@ class RemoteBrowserSession:
     def _launch(self, p, profile: str):
         s = self.settings
         sp = self.resolved_state_path()
-        kwargs: dict[str, Any] = {
-            "locale": "en-US" if self.workspace == "linkedin" else "ru-RU",
-            "viewport": dict(VIEWPORT),
-        }
+        kwargs = browser_context_kwargs(
+            s,
+            locale="en-US" if self.workspace == "linkedin" else "ru-RU",
+            viewport=dict(VIEWPORT),
+        )
         browser = launch_chromium(p, headless=s.effective_headless())
         if sp.exists():
             context = browser.new_context(storage_state=str(sp), **kwargs)

@@ -984,6 +984,16 @@ a:hover { text-decoration: underline; }
 .log .cat-MEDIUM { color: var(--medium); font-weight: 700; }
 .log .cat-LOW { color: var(--low); }
 
+.log-more-btn {
+  flex: 0 0 auto;
+  margin: var(--space-2) auto;
+}
+
+.log-more-li {
+  text-align: center;
+  padding: var(--space-1);
+}
+
 .foot {
   flex: 0 0 auto;
   margin-top: 0;

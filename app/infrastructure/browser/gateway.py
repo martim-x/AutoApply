@@ -33,7 +33,11 @@ from app.domain.parse_dedup import (
     should_stop_old_streak,
 )
 from app.domain.ports import UnitOfWork
-from app.infrastructure.browser.launch import launch_chromium, user_facing_browser_error
+from app.infrastructure.browser.launch import (
+    browser_context_kwargs,
+    launch_chromium,
+    user_facing_browser_error,
+)
 from app.infrastructure.browser.selectors import (
     SEL,
     VACANCY_DESCRIPTION_SELECTORS,
@@ -707,53 +711,43 @@ class PlaywrightBrowserGateway:
                         if not loaded:
                             status, attempts = "load_fail", 1
                         else:
-                            page_text = self._page_text(page)
-                            decision = evaluate_vacancy(
-                                vac.url,
-                                title,
-                                page_text,
-                                require_remote_or_hybrid=bool(
-                                    flags["require_remote_or_hybrid"]
-                                ),
-                                skip_gov=bool(flags["skip_gov"]),
-                                require_python_keywords=bool(
-                                    flags["require_python_keywords"]
-                                ),
-                                location=flags["location"],
-                                launch=flags.get("launch"),
+                            # Queue already went through evaluate_vacancy during
+                            # search (filter_status=ok); don't re-filter here —
+                            # it drops good python vacancies (title-only gate).
+                            company = self._company_from_page(page)
+                            template = pick_letter(
+                                templates,
+                                style=letter_style,
+                                seed=vac.url or title,
                             )
-                            if not decision.ok:
-                                status, attempts = decision.status, 0
-                            else:
-                                company = self._company_from_page(page)
-                                template = pick_letter(
-                                    templates,
-                                    style=letter_style,
-                                    seed=vac.url or title,
-                                )
-                                letter = render_letter(
-                                    template,
-                                    title=title,
-                                    company=company,
-                                    vacancy_name=title,
-                                )
-                                status = "error:unknown"
-                                attempts = 0
-                                for attempts in range(1, s.apply_retries + 1):
-                                    status = self._try_apply_once(page, letter, dry_run)
-                                    if status in (
-                                        "applied", "skipped", "dry_run",
-                                        "need_manual", "captcha",
-                                    ):
-                                        break
-                                    if attempts < s.apply_retries:
-                                        self._goto(
-                                            page,
-                                            vac.url,
-                                            limiter,
-                                            expect=SEL["response_btn"],
-                                        )
-                                        time.sleep(s.load_retry_delay)
+                            letter = render_letter(
+                                template,
+                                title=title,
+                                company=company,
+                                vacancy_name=title,
+                            )
+                            status = "error:unknown"
+                            attempts = 0
+                            saw_unverified = False
+                            for attempts in range(1, s.apply_retries + 1):
+                                status = self._try_apply_once(page, letter, dry_run)
+                                if status == "error:unverified":
+                                    saw_unverified = True
+                                if status in (
+                                    "applied", "skipped", "dry_run",
+                                    "need_manual", "captcha",
+                                ):
+                                    break
+                                if attempts < s.apply_retries:
+                                    self._goto(
+                                        page,
+                                        vac.url,
+                                        limiter,
+                                        expect=SEL["response_btn"],
+                                    )
+                                    time.sleep(s.load_retry_delay)
+                            if saw_unverified and status == "skipped":
+                                status = "applied"
 
                         duration_ms = int((time.time() - t0) * 1000)
                         # Persist attempt immediately (survives mid-run crash)
@@ -867,10 +861,7 @@ class PlaywrightBrowserGateway:
     def _launch(self, p, profile: str):
         s = self.settings
         sp = s.state_path(profile)
-        kwargs: dict[str, Any] = {
-            "locale": "ru-RU",
-            "viewport": {"width": 1280, "height": 900},
-        }
+        kwargs = browser_context_kwargs(s, locale="ru-RU")
         browser = launch_chromium(p, headless=s.effective_headless())
         if sp.exists():
             context = browser.new_context(storage_state=str(sp), **kwargs)
@@ -1014,22 +1005,29 @@ class PlaywrightBrowserGateway:
                 details={"blocker": blocker},
             )
 
+    @staticmethod
+    def _looks_applied(page) -> bool:
+        """Best-effort confirmation that the response actually went through."""
+        try:
+            loc = page.locator(SEL["already"])
+            for i in range(min(loc.count(), 3)):
+                try:
+                    if loc.nth(i).is_visible(timeout=1200):
+                        return True
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return False
+
     def _try_apply_once(self, page, letter: str, dry_run: bool) -> str:
         from playwright.sync_api import TimeoutError as PwTimeout
 
         blocker = self._detect_blockers(page)
         if blocker:
             return blocker
-        try:
-            loc = page.locator(SEL["already"])
-            for i in range(min(loc.count(), 3)):
-                try:
-                    if loc.nth(i).is_visible(timeout=400):
-                        return "skipped"
-                except Exception:
-                    continue
-        except Exception:
-            pass
+        if self._looks_applied(page):
+            return "skipped"
 
         btn = page.locator(SEL["response_btn"]).first
         try:
@@ -1055,6 +1053,7 @@ class PlaywrightBrowserGateway:
         except Exception:
             pass
         submit = page.locator(SEL["submit_response"]).first
+        submit_clicked = False
         try:
             if submit.count() and submit.is_visible(timeout=2500):
                 submit.click()
@@ -1063,11 +1062,19 @@ class PlaywrightBrowserGateway:
                     page.keyboard.press("Escape")
                 except Exception:
                     pass
-                return "applied"
+                submit_clicked = True
         except Exception:
             pass
-        page.wait_for_timeout(800)
-        return "applied"
+        if not submit_clicked:
+            page.wait_for_timeout(800)
+            # Some boards apply on the first click without a popup.
+            if self._looks_applied(page):
+                return "applied"
+            return "error:no_submit"
+        # Confirm the response is recorded; otherwise let the caller retry.
+        if self._looks_applied(page):
+            return "applied"
+        return "error:unverified"
 
     @staticmethod
     def _company_from_page(page) -> str:

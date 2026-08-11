@@ -272,11 +272,18 @@ class AppService:
             "status": self.get_status(profile),
         }
 
-    def list_vacancies(self, profile: str = "default", limit: int = 100) -> list[dict[str, Any]]:
+    def list_vacancies(
+        self,
+        profile: str = "default",
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
         self.ensure_vacancies_rescored()
         profile = self._profile(profile)
         out = []
-        for v in self.uow.vacancies.list_for_profile(profile, limit=limit):
+        for v in self.uow.vacancies.list_for_profile(
+            profile, limit=limit, offset=offset
+        ):
             out.append(
                 {
                     "id": v.id,
@@ -343,12 +350,13 @@ class AppService:
         limit: int = 60,
         *,
         service: str | None = None,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
         from app.domain.entities import normalize_journal_service
 
         svc = normalize_journal_service(service) if service else None
         entries = self.uow.journal.recent(
-            self._profile(profile), limit=limit, service=svc
+            self._profile(profile), limit=limit, service=svc, offset=offset
         )
         from app.infrastructure.timefmt import format_ts
 
@@ -677,11 +685,13 @@ class AppService:
         }
 
     def list_linkedin_contacts(
-        self, profile: str = "default", limit: int = 100
+        self, profile: str = "default", limit: int = 100, offset: int = 0
     ) -> list[dict[str, Any]]:
         profile = self._profile(profile)
         out = []
-        for c in self.uow.linkedin_contacts.list_for_profile(profile, limit=limit):
+        for c in self.uow.linkedin_contacts.list_for_profile(
+            profile, limit=limit, offset=offset
+        ):
             out.append(
                 {
                     "id": c.id,
@@ -697,11 +707,13 @@ class AppService:
         return out
 
     def list_linkedin_vacancies(
-        self, profile: str = "default", limit: int = 100
+        self, profile: str = "default", limit: int = 100, offset: int = 0
     ) -> list[dict[str, Any]]:
         profile = self._profile(profile)
         out = []
-        for v in self.uow.linkedin_vacancies.list_for_profile(profile, limit=limit):
+        for v in self.uow.linkedin_vacancies.list_for_profile(
+            profile, limit=limit, offset=offset
+        ):
             out.append(
                 {
                     "id": v.id,

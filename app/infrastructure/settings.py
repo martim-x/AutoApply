@@ -80,6 +80,11 @@ class Settings(BaseSettings):
     dry_run: bool = False
     headless: bool = False
 
+    # Browser fingerprint hardening (anti-bot)
+    # Empty user_agent keeps Playwright default; set a real Chrome UA to mask.
+    browser_user_agent: str = ""
+    browser_timezone: str = "Europe/Minsk"
+
     # Remote interactive browser (CDP screencast → Web UI)
     # For Railway/Docker: ENABLE_REMOTE_BROWSER=true and HEADLESS=true
     enable_remote_browser: bool = False

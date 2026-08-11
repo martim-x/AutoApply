@@ -698,6 +698,7 @@ class _VacancyRepo:
         *,
         apply_status: str | None = None,
         limit: int = 200,
+        offset: int = 0,
     ) -> list[Vacancy]:
         with self._uow._conn() as c:
             sql = "SELECT * FROM vacancies WHERE profile=:profile"
@@ -708,7 +709,7 @@ class _VacancyRepo:
             rows = c.execute(text(sql), params).mappings().fetchall()
         items = [_row_vacancy(r) for r in rows]
         items.sort(key=lambda v: (v.category.priority, -v.score, v.id or 0))
-        return items[:limit]
+        return items[offset : offset + limit]
 
     def next_queued(self, profile: str, limit: int = 100) -> list[Vacancy]:
         return [
@@ -977,6 +978,7 @@ class _JournalRepo:
         limit: int = 80,
         *,
         service: str | None = None,
+        offset: int = 0,
     ) -> list[JournalEntry]:
         svc = normalize_journal_service(service) if service else None
         with self._uow._conn() as c:
@@ -986,10 +988,15 @@ class _JournalRepo:
                         text(
                             """
                             SELECT * FROM journal WHERE profile=:profile AND service=:service
-                            ORDER BY ts DESC LIMIT :limit
+                            ORDER BY ts DESC LIMIT :limit OFFSET :offset
                             """
                         ),
-                        {"profile": profile, "service": svc, "limit": limit},
+                        {
+                            "profile": profile,
+                            "service": svc,
+                            "limit": limit,
+                            "offset": offset,
+                        },
                     )
                     .mappings()
                     .fetchall()
@@ -1000,10 +1007,10 @@ class _JournalRepo:
                         text(
                             """
                             SELECT * FROM journal WHERE profile=:profile
-                            ORDER BY ts DESC LIMIT :limit
+                            ORDER BY ts DESC LIMIT :limit OFFSET :offset
                             """
                         ),
-                        {"profile": profile, "limit": limit},
+                        {"profile": profile, "limit": limit, "offset": offset},
                     )
                     .mappings()
                     .fetchall()
@@ -1014,10 +1021,10 @@ class _JournalRepo:
                         text(
                             """
                             SELECT * FROM journal WHERE service=:service
-                            ORDER BY ts DESC LIMIT :limit
+                            ORDER BY ts DESC LIMIT :limit OFFSET :offset
                             """
                         ),
-                        {"service": svc, "limit": limit},
+                        {"service": svc, "limit": limit, "offset": offset},
                     )
                     .mappings()
                     .fetchall()
@@ -1026,9 +1033,9 @@ class _JournalRepo:
                 rows = (
                     c.execute(
                         text(
-                            "SELECT * FROM journal ORDER BY ts DESC LIMIT :limit"
+                            "SELECT * FROM journal ORDER BY ts DESC LIMIT :limit OFFSET :offset"
                         ),
-                        {"limit": limit},
+                        {"limit": limit, "offset": offset},
                     )
                     .mappings()
                     .fetchall()
@@ -1109,17 +1116,19 @@ class _LinkedInContactRepo:
             assert row is not None
             return int(row["id"])
 
-    def list_for_profile(self, profile: str, limit: int = 200) -> list[LinkedInContact]:
+    def list_for_profile(
+        self, profile: str, limit: int = 200, offset: int = 0
+    ) -> list[LinkedInContact]:
         with self._uow._conn() as c:
             rows = (
                 c.execute(
                     text(
                         """
                         SELECT * FROM linkedin_contacts WHERE profile=:profile
-                        ORDER BY updated_at DESC LIMIT :limit
+                        ORDER BY updated_at DESC LIMIT :limit OFFSET :offset
                         """
                     ),
-                    {"profile": profile, "limit": limit},
+                    {"profile": profile, "limit": limit, "offset": offset},
                 )
                 .mappings()
                 .fetchall()
@@ -1239,7 +1248,7 @@ class _LinkedInVacancyRepo:
         return {(r["url"] or "").strip() for r in rows if (r["url"] or "").strip()}
 
     def list_for_profile(
-        self, profile: str, limit: int = 200
+        self, profile: str, limit: int = 200, offset: int = 0
     ) -> list[LinkedInVacancyLink]:
         with self._uow._conn() as c:
             rows = (
@@ -1247,10 +1256,10 @@ class _LinkedInVacancyRepo:
                     text(
                         """
                         SELECT * FROM linkedin_vacancies WHERE profile=:profile
-                        ORDER BY updated_at DESC LIMIT :limit
+                        ORDER BY updated_at DESC LIMIT :limit OFFSET :offset
                         """
                     ),
-                    {"profile": profile, "limit": limit},
+                    {"profile": profile, "limit": limit, "offset": offset},
                 )
                 .mappings()
                 .fetchall()

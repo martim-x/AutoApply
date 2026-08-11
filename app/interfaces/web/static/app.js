@@ -50,6 +50,139 @@
   let liTab = "network";
   let remoteFsDesired = false;
   let logFullscreenId = null;
+  const PAGE = 100;
+  const pager = {
+    profile: "",
+    vac: { offset: 0, hasMore: true, loading: false },
+    log: { offset: 0, hasMore: true, loading: false },
+    liContact: { offset: 0, hasMore: true, loading: false },
+    liVac: { offset: 0, hasMore: true, loading: false },
+    liLog: { offset: 0, hasMore: true, loading: false },
+  };
+
+  function pagerFor(kind) {
+    const p = profile();
+    if (pager.profile !== p) {
+      pager.profile = p;
+      for (const k of ["vac", "log", "liContact", "liVac", "liLog"]) {
+        pager[k] = { offset: 0, hasMore: true, loading: false };
+      }
+    }
+    return pager[kind];
+  }
+
+  function setHasMore(kind, hasMore) {
+    pagerFor(kind).hasMore = !!hasMore;
+    const btn = $(`${kind}MoreBtn`);
+    if (btn) btn.hidden = !pagerFor(kind).hasMore;
+  }
+
+  function visibleAmong(selectors) {
+    for (const s of selectors) {
+      const el = document.querySelector(s);
+      if (el && !el.hidden && getComputedStyle(el).display !== "none") return el;
+    }
+    return null;
+  }
+
+  function scrolledDown(el) {
+    return el && el.scrollTop > 80;
+  }
+
+  function appendLogRow(list, l) {
+    const li = document.createElement("li");
+    const lvl = (l.level || "info").toLowerCase();
+    li.className = `lvl-${lvl}`;
+    if (lvl === "error") li.classList.add("err");
+    li.innerHTML =
+      `<span class="t">${escapeHtml(l.when || "")}</span> ` +
+      `<span class="ev">${escapeHtml(l.event || "")}</span> ` +
+      highlightLogMessage(truncateMsg(l.message || "", 200));
+    list.appendChild(li);
+  }
+
+  function appendLiContactRow(body, c) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(c.status || "")}</td>
+      <td><a href="${escapeHtml(c.url)}" target="_blank" rel="noopener">${escapeHtml(c.name || c.url)}</a></td>
+      <td>${escapeHtml(c.query || "")}</td>`;
+    body.appendChild(tr);
+  }
+
+  function appendLiVacancyRow(body, v) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><a href="${escapeHtml(v.url)}" target="_blank" rel="noopener">${escapeHtml(v.title || v.url)}</a></td>
+      <td>${escapeHtml(v.location || "")}</td>
+      <td>${escapeHtml(v.query || "")}</td>`;
+    body.appendChild(tr);
+  }
+
+  function wireInfiniteScroll(el, kind) {
+    if (!el) return;
+    el.addEventListener(
+      "scroll",
+      () => {
+        if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) loadMore(kind);
+      },
+      { passive: true }
+    );
+  }
+
+  async function loadMore(kind) {
+    const st = pagerFor(kind);
+    if (!st.hasMore || st.loading) return;
+    st.loading = true;
+    try {
+      const p = encodeURIComponent(profile());
+      let data = null;
+      if (kind === "vac") {
+        data = await api(
+          `/api/vacancies?profile=${p}&limit=${PAGE}&offset=${st.offset}`
+        );
+        st.offset += (data.vacancies || []).length;
+        const body = $("vacBody");
+        const cards = $("vacCards");
+        if (body && cards) {
+          (data.vacancies || []).forEach((v) => appendVacancy(v, body, cards));
+        }
+      } else if (kind === "log") {
+        data = await api(
+          `/api/logs?profile=${p}&limit=${PAGE}&offset=${st.offset}&service=hh`
+        );
+        st.offset += (data.logs || []).length;
+        const list = $("logList");
+        if (list) (data.logs || []).forEach((l) => appendLogRow(list, l));
+      } else if (kind === "liLog") {
+        data = await api(
+          `/api/logs?profile=${p}&limit=${PAGE}&offset=${st.offset}&service=linkedin`
+        );
+        st.offset += (data.logs || []).length;
+        const list = $("liLogList");
+        if (list) (data.logs || []).forEach((l) => appendLogRow(list, l));
+      } else if (kind === "liContact") {
+        data = await api(
+          `/api/linkedin/contacts?profile=${p}&limit=${PAGE}&offset=${st.offset}`
+        );
+        st.offset += (data.contacts || []).length;
+        const body = $("liContactBody");
+        if (body) (data.contacts || []).forEach((c) => appendLiContactRow(body, c));
+      } else if (kind === "liVac") {
+        data = await api(
+          `/api/linkedin/vacancies?profile=${p}&limit=${PAGE}&offset=${st.offset}`
+        );
+        st.offset += (data.vacancies || []).length;
+        const body = $("liVacBody");
+        if (body) (data.vacancies || []).forEach((v) => appendLiVacancyRow(body, v));
+      }
+      if (data) setHasMore(kind, data.has_more);
+    } catch (_) {
+    } finally {
+      st.loading = false;
+    }
+  }
+
   const WORKSPACE_KEY = "aa-workspace";
   const PANEL_SIZE_KEY = "aa-panel-sizes";
   const ALERT_RECENT_SEC = 45 * 60;
@@ -889,57 +1022,62 @@
     );
   }
 
-  async function refreshVacancies() {
-    const data = await api(`/api/vacancies?profile=${encodeURIComponent(profile())}&limit=10000`);
-    const body = $("vacBody");
-    const cards = $("vacCards");
-    body.innerHTML = "";
-    cards.innerHTML = "";
-    (data.vacancies || []).forEach((v) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td class="cat-${v.category}">${escapeHtml(v.category)}</td>
-        <td>${v.score}</td>
-        <td><a href="${escapeHtml(v.url)}" target="_blank" rel="noopener">${escapeHtml(v.title || v.url)}</a></td>
-        <td>${escapeHtml(v.filter_status || "")}</td>
-        <td>${escapeHtml(v.apply_status || "")}</td>
-        <td>${v.id != null ? explainButtonHtml(v.id) : ""}</td>`;
-      body.appendChild(tr);
+  function appendVacancy(v, body, cards) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="cat-${v.category}">${escapeHtml(v.category)}</td>
+      <td>${v.score}</td>
+      <td><a href="${escapeHtml(v.url)}" target="_blank" rel="noopener">${escapeHtml(v.title || v.url)}</a></td>
+      <td>${escapeHtml(v.filter_status || "")}</td>
+      <td>${escapeHtml(v.apply_status || "")}</td>
+      <td>${v.id != null ? explainButtonHtml(v.id) : ""}</td>`;
+    body.appendChild(tr);
 
-      const card = document.createElement("article");
-      card.className = "vac-card";
-      card.innerHTML = `
-        <div class="vac-card-top">
-          <span class="cat-${v.category}">${escapeHtml(v.category)}</span>
-          <span>score ${v.score}</span>
-        </div>
-        <h3><a href="${escapeHtml(v.url)}" target="_blank" rel="noopener">${escapeHtml(v.title || v.url)}</a></h3>
-        <div class="vac-card-meta">
-          <span>${escapeHtml(v.filter_status || "")}</span>
-          <span>${escapeHtml(v.apply_status || "")}</span>
-        </div>
-        ${v.id != null ? explainButtonHtml(v.id) : ""}`;
-      cards.appendChild(card);
-    });
+    const card = document.createElement("article");
+    card.className = "vac-card";
+    card.innerHTML = `
+      <div class="vac-card-top">
+        <span class="cat-${v.category}">${escapeHtml(v.category)}</span>
+        <span>score ${v.score}</span>
+      </div>
+      <h3><a href="${escapeHtml(v.url)}" target="_blank" rel="noopener">${escapeHtml(v.title || v.url)}</a></h3>
+      <div class="vac-card-meta">
+        <span>${escapeHtml(v.filter_status || "")}</span>
+        <span>${escapeHtml(v.apply_status || "")}</span>
+      </div>
+      ${v.id != null ? explainButtonHtml(v.id) : ""}`;
+    cards.appendChild(card);
+  }
+
+  async function refreshVacancies() {
+    const st = pagerFor("vac");
+    const data = await api(
+      `/api/vacancies?profile=${encodeURIComponent(profile())}&limit=${PAGE}&offset=0`
+    );
+    const wrap = visibleAmong(["#hhVacPanel .table-wrap", "#vacCards"]);
+    if (!scrolledDown(wrap)) {
+      setHasMore("vac", data.has_more);
+      st.offset = (data.vacancies || []).length;
+      const body = $("vacBody");
+      const cards = $("vacCards");
+      body.innerHTML = "";
+      cards.innerHTML = "";
+      (data.vacancies || []).forEach((v) => appendVacancy(v, body, cards));
+    }
   }
 
   async function refreshLogs() {
+    const st = pagerFor("log");
     const data = await api(
-      `/api/logs?profile=${encodeURIComponent(profile())}&limit=10000&service=hh`
+      `/api/logs?profile=${encodeURIComponent(profile())}&limit=${PAGE}&offset=0&service=hh`
     );
     const list = $("logList");
-    list.innerHTML = "";
-    (data.logs || []).forEach((l) => {
-      const li = document.createElement("li");
-      const lvl = (l.level || "info").toLowerCase();
-      li.className = `lvl-${lvl}`;
-      if (lvl === "error") li.classList.add("err");
-      li.innerHTML =
-        `<span class="t">${escapeHtml(l.when || "")}</span> ` +
-        `<span class="ev">${escapeHtml(l.event || "")}</span> ` +
-        highlightLogMessage(truncateMsg(l.message || "", 200));
-      list.appendChild(li);
-    });
+    if (!scrolledDown(list)) {
+      setHasMore("log", data.has_more);
+      st.offset = (data.logs || []).length;
+      list.innerHTML = "";
+      (data.logs || []).forEach((l) => appendLogRow(list, l));
+    }
   }
 
   async function openExplain(vacancyId) {
@@ -1009,61 +1147,52 @@
   }
 
   async function refreshLiContacts() {
+    const st = pagerFor("liContact");
     const data = await api(
-      `/api/linkedin/contacts?profile=${encodeURIComponent(profile())}&limit=80`
+      `/api/linkedin/contacts?profile=${encodeURIComponent(profile())}&limit=${PAGE}&offset=0`
     );
     const body = $("liContactBody");
     if (!body) return;
-    body.innerHTML = "";
-    const contacts = data.contacts || [];
-    contacts.forEach((c) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${escapeHtml(c.status || "")}</td>
-        <td><a href="${escapeHtml(c.url)}" target="_blank" rel="noopener">${escapeHtml(c.name || c.url)}</a></td>
-        <td>${escapeHtml(c.query || "")}</td>`;
-      body.appendChild(tr);
-    });
-    setLiPanelEmpty("liContactEmpty", "liContactTable", contacts.length === 0);
+    const wrap = document.querySelector("#liContactTable");
+    if (!scrolledDown(wrap)) {
+      setHasMore("liContact", data.has_more);
+      st.offset = (data.contacts || []).length;
+      body.innerHTML = "";
+      (data.contacts || []).forEach((c) => appendLiContactRow(body, c));
+    }
+    setLiPanelEmpty("liContactEmpty", "liContactTable", (data.contacts || []).length === 0);
   }
 
   async function refreshLiVacancies() {
+    const st = pagerFor("liVac");
     const data = await api(
-      `/api/linkedin/vacancies?profile=${encodeURIComponent(profile())}&limit=80`
+      `/api/linkedin/vacancies?profile=${encodeURIComponent(profile())}&limit=${PAGE}&offset=0`
     );
     const body = $("liVacBody");
     if (!body) return;
-    body.innerHTML = "";
-    const vacancies = data.vacancies || [];
-    vacancies.forEach((v) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td><a href="${escapeHtml(v.url)}" target="_blank" rel="noopener">${escapeHtml(v.title || v.url)}</a></td>
-        <td>${escapeHtml(v.location || "")}</td>
-        <td>${escapeHtml(v.query || "")}</td>`;
-      body.appendChild(tr);
-    });
-    setLiPanelEmpty("liVacEmpty", "liVacTable", vacancies.length === 0);
+    const wrap = document.querySelector("#liVacTable");
+    if (!scrolledDown(wrap)) {
+      setHasMore("liVac", data.has_more);
+      st.offset = (data.vacancies || []).length;
+      body.innerHTML = "";
+      (data.vacancies || []).forEach((v) => appendLiVacancyRow(body, v));
+    }
+    setLiPanelEmpty("liVacEmpty", "liVacTable", (data.vacancies || []).length === 0);
   }
 
   async function refreshLiLogs() {
+    const st = pagerFor("liLog");
     const data = await api(
-      `/api/logs?profile=${encodeURIComponent(profile())}&limit=10000&service=linkedin`
+      `/api/logs?profile=${encodeURIComponent(profile())}&limit=${PAGE}&offset=0&service=linkedin`
     );
     const list = $("liLogList");
     if (!list) return;
-    list.innerHTML = "";
-    (data.logs || []).forEach((l) => {
-      const li = document.createElement("li");
-      const lvl = (l.level || "info").toLowerCase();
-      li.className = `lvl-${lvl}`;
-      if (lvl === "error") li.classList.add("err");
-      li.innerHTML =
-        `<span class="t">${escapeHtml(l.when || "")}</span> ` +
-        `<span class="ev">${escapeHtml(l.event || "")}</span> ` +
-        highlightLogMessage(truncateMsg(l.message || "", 200));
-      list.appendChild(li);
-    });
+    if (!scrolledDown(list)) {
+      setHasMore("liLog", data.has_more);
+      st.offset = (data.logs || []).length;
+      list.innerHTML = "";
+      (data.logs || []).forEach((l) => appendLogRow(list, l));
+    }
   }
 
   async function refreshAll() {
@@ -2385,6 +2514,15 @@
     } catch (_) {}
     await refreshProfiles();
     await refreshAll();
+    wireInfiniteScroll($("logList"), "log");
+    wireInfiniteScroll($("liLogList"), "liLog");
+    wireInfiniteScroll(document.querySelector("#hhVacPanel .table-wrap"), "vac");
+    wireInfiniteScroll($("vacCards"), "vac");
+    wireInfiniteScroll(document.querySelector("#liContactTable"), "liContact");
+    wireInfiniteScroll(document.querySelector("#liVacTable"), "liVac");
+    document.querySelectorAll("[data-load-more]").forEach((btn) => {
+      btn.addEventListener("click", () => loadMore(btn.dataset.loadMore));
+    });
     setInterval(refreshAll, 2000);
   })();
 })();
