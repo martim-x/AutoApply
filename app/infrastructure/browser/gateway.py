@@ -6,7 +6,7 @@ import re
 import time
 import traceback
 from typing import Any
-from urllib.parse import quote_plus, urljoin, urlparse
+from urllib.parse import quote_plus, urljoin, urlparse, urlunparse
 
 from app.application.alerts import AlertService, get_alert_service
 from app.application.letter import (
@@ -913,10 +913,42 @@ class PlaywrightBrowserGateway:
         except Exception:
             return False
 
+    def _normalize_vacancy_url(self, url: str) -> str:
+        """Switch hh.ru (RU) links to the profile's site (rabota.by etc.)."""
+        if not url:
+            return url
+        try:
+            parsed = urlparse(url)
+            if parsed.netloc not in ("hh.ru", "www.hh.ru", "rabota.by", "www.rabota.by"):
+                return url
+            base = self._site_base()
+            domain = urlparse(base).netloc
+            if not domain or parsed.netloc == domain:
+                return url
+            return urlunparse(parsed._replace(netloc=domain, scheme="https"))
+        except Exception:
+            return url
+
+    @staticmethod
+    def _confirm_relocation_warning(page) -> None:
+        """Click «Все равно откликнуться» on the cross-country warning dialog."""
+        try:
+            loc = page.locator(SEL["relocation_confirm"])
+            for i in range(min(loc.count(), 2)):
+                try:
+                    if loc.nth(i).is_visible(timeout=800):
+                        loc.nth(i).click(timeout=2_000)
+                        return
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
     def _goto(self, page, url: str, limiter: RateLimiter, *, expect: str | None = None) -> bool:
         from playwright.sync_api import TimeoutError as PwTimeout
 
         s = self.settings
+        url = self._normalize_vacancy_url(url)
         last_err: Exception | None = None
         for attempt in range(1, s.load_retries + 1):
             limiter.wait()
@@ -1056,6 +1088,8 @@ class PlaywrightBrowserGateway:
             btn.click(timeout=5_000)
         except Exception as e:
             return f"error:click:{e}"
+        # Cross-country dialog may pop before the response page opens.
+        self._confirm_relocation_warning(page)
 
         # The response button navigates to a full-page form
         # (/applicant/vacancy_response); a second tab may also be used.
@@ -1117,6 +1151,7 @@ class PlaywrightBrowserGateway:
         blocker = self._detect_blockers(page)
         if blocker:
             return blocker
+        self._confirm_relocation_warning(page)
 
         questions = page.locator(SEL["response_question_field"])
         if questions.count():

@@ -43,6 +43,8 @@ SEL = {
     "response_question_field": 'textarea[name^="task_"]',
     "letter_toggle": '[data-qa="vacancy-response-letter-toggle"]',
     "response_success": "text=Отклик отправлен",
+    # Cross-country response warning dialog (e.g. hh.ru vacancy on rabota.by)
+    "relocation_confirm": '[data-qa="relocation-warning-confirm"]',
     "submit_response": (
         '[data-qa="vacancy-response-submit-popup"],'
         '[data-qa="vacancy-response-letter-submit"],'
