@@ -37,6 +37,12 @@ SEL = {
         'textarea[name="letter"],'
         "textarea"
     ),
+    # Full-page response form (new rabota.by flow): /applicant/vacancy_response
+    "response_form": 'form[name="vacancy_response"]',
+    "response_question": '[data-qa="task-question"]',
+    "response_question_field": 'textarea[name^="task_"]',
+    "letter_toggle": '[data-qa="vacancy-response-letter-toggle"]',
+    "response_success": "text=Отклик отправлен",
     "submit_response": (
         '[data-qa="vacancy-response-submit-popup"],'
         '[data-qa="vacancy-response-letter-submit"],'

@@ -734,7 +734,7 @@ class PlaywrightBrowserGateway:
                                 if status == "error:unverified":
                                     saw_unverified = True
                                 if status in (
-                                    "applied", "skipped", "dry_run",
+                                    "applied", "skipped", "archived", "dry_run",
                                     "need_manual", "captcha",
                                 ):
                                     break
@@ -779,7 +779,9 @@ class PlaywrightBrowserGateway:
                             limiter.wait(
                                 extra=s.after_apply_delay - s.min_action_interval
                             )
-                        elif status.startswith("filtered:") or status == "skipped":
+                        elif status.startswith("filtered:") or status in (
+                            "skipped", "archived"
+                        ):
                             uow.vacancies.set_apply_status(vac.id, "skipped")
                         elif status in ("need_manual", "captcha"):
                             uow.vacancies.set_apply_status(vac.id, "queued")
@@ -1006,6 +1008,18 @@ class PlaywrightBrowserGateway:
             )
 
     @staticmethod
+    def _looks_archived(page) -> bool:
+        """HH archives closed vacancies — no response button is rendered."""
+        for text in ("Вакансия в архиве", "В архиве с", "в архиве с"):
+            try:
+                loc = page.get_by_text(text, exact=False)
+                if loc.count() and loc.first.is_visible(timeout=600):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    @staticmethod
     def _looks_applied(page) -> bool:
         """Best-effort confirmation that the response actually went through."""
         try:
@@ -1026,6 +1040,8 @@ class PlaywrightBrowserGateway:
         blocker = self._detect_blockers(page)
         if blocker:
             return blocker
+        if self._looks_archived(page):
+            return "archived"
         if self._looks_applied(page):
             return "skipped"
 
@@ -1040,24 +1056,43 @@ class PlaywrightBrowserGateway:
             btn.click(timeout=5_000)
         except Exception as e:
             return f"error:click:{e}"
-        page.wait_for_timeout(900)
+
+        # The response button navigates to a full-page form
+        # (/applicant/vacancy_response); a second tab may also be used.
+        # No fixed sleeps: wait_for_url/selector is the single gate (<=5s).
+        try:
+            if len(page.context.pages) > 1:
+                page = page.context.pages[-1]
+        except Exception:
+            pass
+        try:
+            page.wait_for_url("**/applicant/vacancy_response**", timeout=5_000)
+            return self._submit_response_form(page, letter, dry_run)
+        except PwTimeout:
+            pass
+        form = page.locator(SEL["response_form"])
+        try:
+            form.wait_for(state="visible", timeout=3_000)
+            return self._submit_response_form(page, letter, dry_run)
+        except PwTimeout:
+            pass
+
         blocker = self._detect_blockers(page)
         if blocker:
             return blocker
+        # Legacy flow: in-page popup with a single letter textarea.
         area = page.locator(SEL["letter_area"]).first
         try:
-            if area.count() and area.is_visible(timeout=2500):
+            if area.count() and area.is_visible(timeout=2000):
                 area.click()
                 area.fill(letter)
-                page.wait_for_timeout(350)
         except Exception:
             pass
         submit = page.locator(SEL["submit_response"]).first
         submit_clicked = False
         try:
-            if submit.count() and submit.is_visible(timeout=2500):
+            if submit.count() and submit.is_visible(timeout=2000):
                 submit.click()
-                page.wait_for_timeout(1400)
                 try:
                     page.keyboard.press("Escape")
                 except Exception:
@@ -1066,12 +1101,69 @@ class PlaywrightBrowserGateway:
         except Exception:
             pass
         if not submit_clicked:
-            page.wait_for_timeout(800)
             # Some boards apply on the first click without a popup.
             if self._looks_applied(page):
                 return "applied"
             return "error:no_submit"
         # Confirm the response is recorded; otherwise let the caller retry.
+        if self._looks_applied(page):
+            return "applied"
+        return "error:unverified"
+
+    def _submit_response_form(self, page, letter: str, dry_run: bool) -> str:
+        """Full-page /applicant/vacancy_response: questions + letter + submit."""
+        from playwright.sync_api import TimeoutError as PwTimeout
+
+        blocker = self._detect_blockers(page)
+        if blocker:
+            return blocker
+
+        questions = page.locator(SEL["response_question_field"])
+        if questions.count():
+            answer = (self.settings.response_question_answer or "").strip()
+            if not answer:
+                return "need_manual"
+            for i in range(questions.count()):
+                questions.nth(i).fill(answer)
+
+        # Optional cover letter via the toggle card.
+        if letter:
+            toggle = page.locator(SEL["letter_toggle"])
+            try:
+                if toggle.count() and toggle.first.is_visible(timeout=1500):
+                    toggle.first.click(timeout=2500)
+            except Exception:
+                pass
+            try:
+                for t in page.locator("textarea").all():
+                    name = (t.get_attribute("name") or "")
+                    if name.startswith("task_"):
+                        continue
+                    try:
+                        if t.is_visible(timeout=1500):
+                            t.click()
+                            t.fill(letter)
+                            break
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
+        submit = page.locator(SEL["submit_response"]).first
+        try:
+            if not (submit.count() and submit.is_visible(timeout=4_000)):
+                return "error:no_submit"
+            submit.click(timeout=4_000)
+        except Exception:
+            return "error:no_submit"
+        blocker = self._detect_blockers(page)
+        if blocker:
+            return blocker
+        try:
+            page.wait_for_selector(SEL["response_success"], timeout=5_000)
+            return "applied"
+        except PwTimeout:
+            pass
         if self._looks_applied(page):
             return "applied"
         return "error:unverified"

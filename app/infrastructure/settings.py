@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     browser_user_agent: str = ""
     browser_timezone: str = "Europe/Minsk"
 
+    # Employer screening questions on the /applicant/vacancy_response page.
+    # If empty, vacancies with required questions are paused for manual answers.
+    response_question_answer: str = ""
+
     # Remote interactive browser (CDP screencast → Web UI)
     # For Railway/Docker: ENABLE_REMOTE_BROWSER=true and HEADLESS=true
     enable_remote_browser: bool = False
@@ -97,8 +101,8 @@ class Settings(BaseSettings):
     require_python_keywords: bool = True
 
     # Rate limits / retry
-    min_action_interval: float = 2.0
-    after_apply_delay: float = 8.0
+    min_action_interval: float = 1.5
+    after_apply_delay: float = 5.0
     jitter: float = 0.35
     max_per_hour: int = 40
     max_per_day: int = 180
@@ -107,7 +111,7 @@ class Settings(BaseSettings):
     apply_retries: int = 2
     navigation_timeout_ms: int = 45_000
     content_timeout_ms: int = 20_000
-    settle_ms: int = 1200
+    settle_ms: int = 700
 
     # Optional future secrets
     api_key: str | None = None
