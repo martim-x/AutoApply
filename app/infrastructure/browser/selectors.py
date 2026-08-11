@@ -62,4 +62,24 @@ SEL = {
         'iframe[src*="captcha"],'
         ".captcha"
     ),
+    # Chat with employer after a successful response.
+    "chat_link": (
+        'a[data-qa="vacancy-response-message"],'
+        'a[data-qa="vacancy-response-message-top"],'
+        'a[data-qa="vacancy-response-link-message"],'
+        'a:has-text("Написать сообщение")'
+    ),
+    "chat_disabled": (
+        'text=Работодатель не принимает сообщения,'
+        'text=не принимает сообщения'
+    ),
+    "chat_input": (
+        'textarea[data-qa="chat-send-textarea"],'
+        'textarea[data-qa="message-input"],'
+        'textarea[data-qa="chat-message-input"],'
+        'div[data-qa="chat-input"] textarea,'
+        'textarea[placeholder*="Сообщение"],'
+        "textarea"
+    ),
+    "chat_message": '[data-qa="chat-message"]',
 }

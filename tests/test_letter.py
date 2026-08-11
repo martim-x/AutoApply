@@ -76,6 +76,42 @@ def test_legacy_vacancy_name():
     assert out == "Вакансия: Backend"
 
 
+def test_bracket_company_substituted():
+    tpl = "Откликаюсь на позицию Python backend-разработчика в [Компания].\nФинал."
+    out = render_letter(tpl, company="Acme")
+    assert "в Acme" in out
+    assert "[Компания]" not in out
+
+
+def test_bracket_company_missing_drops_sentence():
+    tpl = "Откликаюсь на позицию Python backend-разработчика в [Компания].\nФинал."
+    out = render_letter(tpl, company="")
+    assert out == "Финал."
+    assert "[" not in out
+    assert "None" not in out
+
+
+def test_unresolved_unknown_bracket_drops_sentence():
+    tpl = (
+        "Привет!\n"
+        "[Компания] привлекает [конкретная причина из вакансии: продукт, "
+        "архитектура, команда]. Готов рассказать про проекты на созвоне.\n"
+        "С уважением,\nТимофей"
+    )
+    out = render_letter(tpl, company="")
+    assert "[" not in out
+    assert "привлекает" not in out
+    assert "С уважением" in out
+    assert "Тимофей" in out
+
+
+def test_bracket_closing_sentence_survives():
+    tpl = "[Компания] привлекает [причина]. Готов рассказать на созвоне."
+    out = render_letter(tpl, company="Acme")
+    assert out == "Готов рассказать на созвоне."
+    assert "[" not in out
+
+
 def test_load_and_pick_styles():
     templates = load_letter_templates(LETTERS_DIR)
     names = {n for n, _ in templates}

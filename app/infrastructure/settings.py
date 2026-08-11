@@ -89,6 +89,12 @@ class Settings(BaseSettings):
     # If empty, vacancies with required questions are paused for manual answers.
     response_question_answer: str = ""
 
+    # Send the rendered cover letter into the employer chat right after a
+    # successful response (best effort; chat is employer-optional).
+    # CHAT_MESSAGE overrides the letter when set.
+    chat_after_apply: bool = False
+    chat_message: str = ""
+
     # Remote interactive browser (CDP screencast → Web UI)
     # For Railway/Docker: ENABLE_REMOTE_BROWSER=true and HEADLESS=true
     enable_remote_browser: bool = False

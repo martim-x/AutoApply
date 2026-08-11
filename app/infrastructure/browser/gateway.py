@@ -47,6 +47,29 @@ from app.infrastructure.settings import Settings
 # Minimum length before accepting a description node (skip empty stubs).
 _DESC_MIN_CHARS = 80
 
+# Human-readable explanation per error status, shown in the journal and alerts.
+STATUS_HINTS: dict[str, str] = {
+    "error:no_submit": "кнопка «Отправить» не появилась на форме отклика — страница могла не дочитаться",
+    "error:no_response_button": "кнопка «Откликнуться» не найдена — вакансия закрыта, страница не загрузилась или сработала защита",
+    "error:unverified": "отклик, скорее всего, отправлен, но подтверждение «Вы откликнулись» не найдено — проверьте вручную",
+    "error:click": "не удалось кликнуть по кнопке отклика",
+    "error:timeout": "страница не ответила вовремя",
+    "error:load": "не удалось загрузить страницу вакансии",
+    "error:unknown": "непредвиденная ошибка",
+    "need_manual": "требуется человек: работодатель задаёт вопросы в форме отклика",
+    "captcha": "сработала защита от ботов — требуется человек",
+    "archived": "вакансия в архиве — отклик невозможен",
+    "load_fail": "страница вакансии не загрузилась за отведённое время",
+    "unexpected": "непредвиденная ошибка во время отклика",
+}
+
+
+def _status_hint(status: str) -> str:
+    for prefix, hint in STATUS_HINTS.items():
+        if status == prefix or status.startswith(prefix + ":"):
+            return hint
+    return ""
+
 
 def vacancy_id_from_url(url: str) -> str | None:
     m = re.search(r"/vacancy/(\d+)", url)
@@ -798,11 +821,52 @@ class PlaywrightBrowserGateway:
                                     profile,
                                     f"{status}: {title[:60]}",
                                     event="error",
-                                    details={"url": vac.url, "status": status},
+                                    details={
+                                        "url": vac.url,
+                                        "status": status,
+                                        "hint": _status_hint(status),
+                                    },
                                 )
 
                         processed += 1
-                        uow.journal.log(profile, status, f"[{cat}] {title[:70]}")
+                        hint = _status_hint(status)
+                        msg = f"[{cat}] {title[:70]}"
+                        if hint:
+                            msg += f" — {hint}"
+                        payload = {
+                            "url": vac.url,
+                            "status": status,
+                            "hint": hint,
+                            "domain": (
+                                urlparse(vac.url).netloc if vac.url else ""
+                            ),
+                        }
+                        uow.journal.log(profile, status, msg, payload=payload)
+
+                        if status == "applied" and not dry_run:
+                            chat_result = self._send_chat_followup(
+                                page, vac.url, letter, limiter, s
+                            )
+                            if chat_result == "chat_sent":
+                                uow.journal.log(
+                                    profile,
+                                    "chat_sent",
+                                    f"Сопроводительное отправлено в чат — {title[:60]}",
+                                    payload={
+                                        "url": vac.url,
+                                        "domain": urlparse(vac.url).netloc,
+                                    },
+                                )
+                            elif s.chat_after_apply:
+                                uow.journal.log(
+                                    profile,
+                                    "chat_skipped",
+                                    f"Чат с работодателем недоступен — {title[:60]}",
+                                    payload={
+                                        "url": vac.url,
+                                        "reason": "no chat or employer disabled it",
+                                    },
+                                )
                     except Exception as unit_exc:
                         uow.journal.log(
                             profile,
@@ -1064,6 +1128,12 @@ class PlaywrightBrowserGateway:
                     continue
         except Exception:
             pass
+        try:
+            loc = page.locator(SEL["response_success"])
+            if loc.count() and loc.first.is_visible(timeout=500):
+                return True
+        except Exception:
+            pass
         return False
 
     def _try_apply_once(self, page, letter: str, dry_run: bool) -> str:
@@ -1079,7 +1149,7 @@ class PlaywrightBrowserGateway:
 
         btn = page.locator(SEL["response_btn"]).first
         try:
-            btn.wait_for(state="visible", timeout=8_000)
+            btn.wait_for(state="visible", timeout=10_000)
         except PwTimeout:
             return "error:no_response_button"
         if dry_run:
@@ -1100,13 +1170,13 @@ class PlaywrightBrowserGateway:
         except Exception:
             pass
         try:
-            page.wait_for_url("**/applicant/vacancy_response**", timeout=5_000)
+            page.wait_for_url("**/applicant/vacancy_response**", timeout=12_000)
             return self._submit_response_form(page, letter, dry_run)
         except PwTimeout:
             pass
         form = page.locator(SEL["response_form"])
         try:
-            form.wait_for(state="visible", timeout=3_000)
+            form.wait_for(state="visible", timeout=5_000)
             return self._submit_response_form(page, letter, dry_run)
         except PwTimeout:
             pass
@@ -1187,9 +1257,15 @@ class PlaywrightBrowserGateway:
         submit = page.locator(SEL["submit_response"]).first
         try:
             if not (submit.count() and submit.is_visible(timeout=4_000)):
+                # No submit button: the response may still have gone through
+                # instantly (button on vacancy page already reads "Вы откликнулись").
+                if self._looks_applied(page):
+                    return "applied"
                 return "error:no_submit"
             submit.click(timeout=4_000)
         except Exception:
+            if self._looks_applied(page):
+                return "applied"
             return "error:no_submit"
         blocker = self._detect_blockers(page)
         if blocker:
@@ -1214,6 +1290,79 @@ class PlaywrightBrowserGateway:
             return text[:120] if text else ""
         except Exception:
             return ""
+
+    def _send_chat_followup(
+        self,
+        page,
+        vac_url: str,
+        message: str,
+        limiter: RateLimiter,
+        s: Settings,
+    ) -> str:
+        """Best-effort: open the employer chat and send the cover letter.
+
+        Returns "chat_sent" / "chat_skipped". Never raises; the apply
+        result already recorded — chat is a bonus, not a gate.
+        """
+        try:
+            if not s.chat_after_apply:
+                return "chat_skipped"
+            message = (s.chat_message or message or "").strip()
+            if not message:
+                return "chat_skipped"
+
+            self._goto(page, vac_url, limiter, expect=SEL["response_btn"])
+            chat_url = ""
+            link = page.locator(SEL["chat_link"]).first
+            try:
+                if link.count():
+                    chat_url = (link.get_attribute("href") or "").strip()
+            except Exception:
+                chat_url = ""
+
+            if not chat_url:
+                parsed = urlparse(vac_url)
+                vid = vacancy_id_from_url(vac_url)
+                if vid:
+                    chat_url = urljoin(
+                        f"{parsed.scheme}://{parsed.netloc}",
+                        f"/applicant/conversations/{vid}",
+                    )
+            if not chat_url:
+                return "chat_skipped"
+
+            self._goto(page, chat_url, limiter, expect="")
+            time.sleep(s.settle_ms / 1000.0)
+
+            disabled = page.locator(SEL["chat_disabled"]).first
+            try:
+                if disabled.count() and disabled.is_visible(timeout=1500):
+                    return "chat_skipped"
+            except Exception:
+                pass
+
+            box = page.locator(SEL["chat_input"]).first
+            try:
+                if not (box.count() and box.is_visible(timeout=5_000)):
+                    return "chat_skipped"
+                box.click(timeout=2_000)
+                box.fill(message)
+                page.keyboard.press("Enter")
+            except Exception:
+                return "chat_skipped"
+
+            time.sleep(max(1.0, s.settle_ms / 1000.0))
+            sent = page.locator(SEL["chat_message"]).last
+            try:
+                if sent.count() and sent.is_visible(timeout=1500):
+                    text = (sent.inner_text(timeout=1500) or "").strip()
+                    if text and text[:40] in message:
+                        return "chat_sent"
+            except Exception:
+                pass
+            return "chat_skipped"
+        except Exception:
+            return "chat_skipped"
 
     @staticmethod
     def _page_text(page) -> str:

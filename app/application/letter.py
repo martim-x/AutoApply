@@ -28,6 +28,10 @@ _OPTIONAL_BLOCK = re.compile(r"\{\{#(\w+)\}\}(.*?)\{\{/\1\}\}", re.DOTALL)
 _NAMED_PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
 _CHOICE = re.compile(r"\{([^{}|]+\|[^{}]*)\}")
 _NAMED_KEYS = frozenset({"company", "title", "vacancy_name"})
+# Square-bracket placeholders, e.g. "в [Компания]". Unknown or empty
+# brackets make the whole sentence get dropped (never sent literally).
+_BRACKET_PLACEHOLDER = re.compile(r"\[([^\]\n]{1,80})\]")
+_BRACKET_KEYS = {"компания": "company", "company": "company"}
 _EMPTY_MARKERS = frozenset({"", "none", "null", "nil", "n/a", "-"})
 
 _DEFAULT_LETTER = (
@@ -94,15 +98,39 @@ def _has_unresolved_named(fragment: str) -> bool:
     return False
 
 
+def _has_unresolved_bracket(fragment: str) -> bool:
+    """Any remaining [..] token is unresolved (known ones were substituted)."""
+    return _BRACKET_PLACEHOLDER.search(fragment) is not None
+
+
+def _substitute_brackets(text: str, values: dict[str, str]) -> str:
+    """Replace [Компания] → company; leave unknown/empty tokens to be dropped."""
+
+    def repl(m: re.Match[str]) -> str:
+        key = _BRACKET_KEYS.get(m.group(1).strip().lower())
+        if key is None:
+            return m.group(0)
+        val = values.get(key, "")
+        return val if val else m.group(0)
+
+    return _BRACKET_PLACEHOLDER.sub(repl, text)
+
+
 def _strip_unresolved_placeholder_clauses(text: str) -> str:
-    """Drop sentences/lines that still contain unresolved {company}/{title}/…"""
+    """Drop sentences/lines that still contain unresolved {company}/{title}/… or [..]."""
     out_lines: list[str] = []
     for line in text.splitlines():
-        if not _has_unresolved_named(line):
+        unresolved = _has_unresolved_named(line) or _has_unresolved_bracket(line)
+        if not unresolved:
             out_lines.append(line)
             continue
         parts = re.split(r"(?<=[.!?…])\s+", line)
-        kept = [p for p in parts if p and not _has_unresolved_named(p)]
+        kept = [
+            p for p in parts
+            if p
+            and not _has_unresolved_named(p)
+            and not _has_unresolved_bracket(p)
+        ]
         if kept:
             out_lines.append(" ".join(kept))
     return "\n".join(out_lines)
@@ -137,6 +165,8 @@ def render_letter(
     for key, val in values.items():
         if val:
             text = _substitute_named(text, key, val)
+
+    text = _substitute_brackets(text, values)
 
     text = _strip_unresolved_placeholder_clauses(text)
 

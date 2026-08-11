@@ -1,6 +1,6 @@
 {Здравствуйте|Добрый день}!
 
-Я Python backend-разработчик, более 4.5 лет. Работаю с Django и FastAPI: от REST API и схем PostgreSQL до очередей, фона и CI/CD. Ищу позицию Middle+ в продуктовой команде.
+Я Python backend-разработчик, более 5 лет. Работаю с Django и FastAPI: от REST API и схем PostgreSQL до очередей, фона и CI/CD. Ищу позицию Middle+ в продуктовой команде.
 
 На платформе подписок для EdTech отвечал за subscription-service и часть assistant-service. Вёл API тарифов и подписок, trial и смену плана с proration, обмен через RabbitMQ и Kafka, потоковые выгрузки, observability в своих сервисах. В billing дописывал CRUD по более простым задачам.
 
