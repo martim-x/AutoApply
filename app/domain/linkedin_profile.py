@@ -44,16 +44,18 @@ LINKEDIN_LAUNCH_DEFAULTS: dict[str, Any] = {
 class LinkedInLaunchProfile(BaseModel):
     """Параметры LinkedIn networking + vacancy scrape (config/linkedin.launch.json)."""
 
-    locations: list[str] = Field(default_factory=lambda: list(LINKEDIN_LAUNCH_DEFAULTS["locations"]))
+    locations: list[str] = Field(
+        default_factory=lambda: list(LINKEDIN_LAUNCH_DEFAULTS["locations"])
+    )
     people_queries: list[str] = Field(
         default_factory=lambda: list(LINKEDIN_LAUNCH_DEFAULTS["people_queries"])
     )
     vacancy_queries: list[str] = Field(
         default_factory=lambda: list(LINKEDIN_LAUNCH_DEFAULTS["vacancy_queries"])
     )
-    connect_limit: int = Field(default=15, ge=1, le=80)
+    connect_limit: int = Field(default=15, ge=1, le=10_000)
     vacancy_limit: int = Field(default=40, ge=1, le=100_000)
-    max_profiles_per_query: int = Field(default=10, ge=1, le=40)
+    max_profiles_per_query: int = Field(default=10, ge=1, le=10_000)
     min_action_interval: float = Field(default=8.0, ge=3.0, le=120.0)
     after_connect_delay: float = Field(default=14.0, ge=5.0, le=180.0)
     jitter: float = Field(default=0.4, ge=0.0, le=1.0)
@@ -139,7 +141,9 @@ def load_linkedin_launch(
             raw = None
             source = "defaults"
 
-    merged, notes = deep_merge_defaults(raw, LINKEDIN_LAUNCH_DEFAULTS, prefix="linkedin")
+    merged, notes = deep_merge_defaults(
+        raw, LINKEDIN_LAUNCH_DEFAULTS, prefix="linkedin"
+    )
     if source == "defaults" or (path is None and not p.exists()):
         notes.insert(
             0,
