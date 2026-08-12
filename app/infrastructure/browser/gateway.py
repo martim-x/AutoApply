@@ -753,6 +753,7 @@ class PlaywrightBrowserGateway:
                             attempts = 0
                             saw_unverified = False
                             saw_apply_error = False
+                            self._last_letter_filled = False
                             for attempts in range(1, s.apply_retries + 1):
                                 status = self._try_apply_once(page, letter, dry_run)
                                 if status == "error:unverified":
@@ -844,6 +845,9 @@ class PlaywrightBrowserGateway:
                             "url": vac.url,
                             "status": status,
                             "hint": hint,
+                            "letter_filled": getattr(
+                                self, "_last_letter_filled", False
+                            ),
                             "domain": (
                                 urlparse(vac.url).netloc if vac.url else ""
                             ),
@@ -1241,12 +1245,15 @@ class PlaywrightBrowserGateway:
             return blocker
         # Legacy flow: in-page popup with a single letter textarea.
         area = page.locator(SEL["letter_area"]).first
+        filled = False
         try:
             if area.count() and area.is_visible(timeout=4000):
                 area.click()
                 area.fill(letter)
+                filled = True
         except Exception:
             pass
+        self._last_letter_filled = filled
         submit = page.locator(SEL["submit_response"]).first
         submit_clicked = False
         try:
@@ -1287,11 +1294,13 @@ class PlaywrightBrowserGateway:
                 questions.nth(i).fill(answer)
 
         # Optional cover letter via the toggle card.
+        filled = False
         if letter:
             toggle = page.locator(SEL["letter_toggle"])
             try:
-                if toggle.count() and toggle.first.is_visible(timeout=1500):
-                    toggle.first.click(timeout=2500)
+                if toggle.count() and toggle.first.is_visible(timeout=3000):
+                    toggle.first.click(timeout=3000)
+                    time.sleep(0.6)
             except Exception:
                 pass
             try:
@@ -1300,14 +1309,16 @@ class PlaywrightBrowserGateway:
                     if name.startswith("task_"):
                         continue
                     try:
-                        if t.is_visible(timeout=1500):
+                        if t.is_visible(timeout=3000):
                             t.click()
                             t.fill(letter)
+                            filled = True
                             break
                     except Exception:
                         continue
             except Exception:
                 pass
+        self._last_letter_filled = filled
 
         submit = page.locator(SEL["submit_response"]).first
         try:
@@ -1387,54 +1398,93 @@ class PlaywrightBrowserGateway:
                     chat_url,
                 )
                 self._goto(page, chat_url, limiter, expect="")
-            else:
-                # 2. Header «Чаты» → pick the conversation by vacancy title.
-                activator = page.locator(SEL["chatik_activator"]).first
-                try:
-                    if activator.count() and activator.is_visible(timeout=2000):
-                        activator.click(timeout=3000)
-                    else:
-                        return "chat_skipped"
-                except Exception:
-                    return "chat_skipped"
                 time.sleep(max(1.0, s.settle_ms / 1000.0))
                 picked = self._pick_chatik_conversation(page, title)
                 if not picked:
                     return "chat_skipped"
+                return self._send_chatik_message(page, message, s)
 
-            time.sleep(max(1.0, s.settle_ms / 1000.0))
-            return self._send_chatik_message(page, message, s)
+            # 2. Header «Чаты» → chatik widget → reopen in a full tab.
+            chat = self._open_chatik_tab(page, s)
+            if chat is None:
+                return "chat_skipped"
+            picked = self._pick_chatik_conversation(chat, title)
+            if not picked:
+                return "chat_skipped"
+            return self._send_chatik_message(chat, message, s)
         except Exception:
             return "chat_skipped"
 
-    def _pick_chatik_conversation(self, page, title: str) -> bool:
-        """Find and open the conversation whose subject matches the vacancy."""
+    def _open_chatik_tab(self, page, s: Settings):
+        """Click «Чаты» in the header and reopen the chatik widget in a tab."""
+        from playwright.sync_api import TimeoutError as PwTimeout
 
-        items = page.locator(SEL["chatik_conversation"])
         try:
-            if items.count() == 0:
-                items = page.locator('div[data-qa*="chatik"], li[data-qa*="chatik"]')
-            for i in range(min(items.count(), 60)):
-                item = items.nth(i)
-                try:
-                    if not item.is_visible(timeout=800):
-                        continue
-                    text = (item.inner_text(timeout=800) or "").strip()
-                except Exception:
+            activator = page.locator(SEL["chatik_activator"]).first
+            if not (activator.count() and activator.is_visible(timeout=3000)):
+                return None
+            activator.click(timeout=3000)
+        except Exception:
+            return None
+        try:
+            iframe = page.frame_locator(SEL["chatik_iframe"]).locator("body").first
+            iframe.wait_for(state="attached", timeout=10_000)
+        except PwTimeout:
+            pass
+        time.sleep(max(1.2, s.settle_ms / 1000.0))
+        try:
+            new_tab = page.locator(SEL["chatik_new_tab"]).first
+            if not (new_tab.count() and new_tab.is_visible(timeout=3000)):
+                return None
+            with page.context.expect_page(timeout=10_000) as pinfo:
+                new_tab.click(timeout=3000)
+            chat = pinfo.value
+            chat.wait_for_load_state("domcontentloaded")
+            time.sleep(max(1.5, s.settle_ms / 1000.0))
+            return chat
+        except Exception:
+            return None
+
+    def _pick_chatik_conversation(self, page, title: str) -> bool:
+        """Find and open the conversation whose subject matches the vacancy.
+
+        Freshly-sent responses sit at the top of the list, so the first
+        visible conversation is a fine fallback.
+        """
+        items = page.locator(SEL["chatik_conversation"])
+        total = 0
+        try:
+            total = items.count()
+        except Exception:
+            total = 0
+        if total == 0:
+            items = page.locator('div[data-qa*="chatik"], li[data-qa*="chatik"]')
+        hay = (title or "").casefold()
+        for i in range(min(total, 60)):
+            item = items.nth(i)
+            try:
+                if not item.is_visible(timeout=800):
                     continue
-                hay = title.casefold()
-                if hay and (hay[:40] in text.casefold()):
+                text = (item.inner_text(timeout=800) or "").strip()
+            except Exception:
+                continue
+            if hay and hay[:40] in text.casefold():
+                item.click(timeout=2000)
+                return True
+        # Fallback 1: the freshest channel is ours (top of the list).
+        for i in range(min(total, 60)):
+            item = items.nth(i)
+            try:
+                if item.is_visible(timeout=500):
                     item.click(timeout=2000)
                     return True
-        except Exception:
-            pass
-        # Fallback: open the first conversation with a send box.
+            except Exception:
+                continue
+        # Fallback 2: a conversation may already be open.
         try:
             box = page.locator(SEL["chat_input"]).first
             if box.count() and box.is_visible(timeout=2000):
                 return True
-            items.first.click(timeout=2000)
-            return True
         except Exception:
             pass
         return False

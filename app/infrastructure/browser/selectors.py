@@ -41,7 +41,13 @@ SEL = {
     "response_form": 'form[name="vacancy_response"]',
     "response_question": '[data-qa="task-question"]',
     "response_question_field": 'textarea[name^="task_"]',
-    "letter_toggle": '[data-qa="vacancy-response-letter-toggle"]',
+    "letter_toggle": (
+        '[data-qa="vacancy-response-letter-toggle"],'
+        '[data-qa*="vacancy-response-letter"],'
+        'button:has-text("Добавить сопроводительное"),'
+        'button:has-text("Сопроводительное письмо"),'
+        'text=Добавить сопроводительное'
+    ),
     "response_success": "text=Отклик отправлен",
     # Cross-country response warning dialog (e.g. hh.ru vacancy on rabota.by)
     "relocation_confirm": '[data-qa="relocation-warning-confirm"]',
@@ -87,7 +93,13 @@ SEL = {
         '[data-qa="chatikActivator-button"],'
         '[data-qa="chatik-activator-navi-item"]'
     ),
-    "chatik_conversation": '[data-qa*="chatik-conversation"], [data-qa*="chatik-chat-"]',
+    "chatik_iframe": (
+        'iframe[src*="chatik"],'
+        'iframe[data-qa="chatik-integration-iframe"],'
+        '.chatik-integration-iframe'
+    ),
+    "chatik_new_tab": '[data-qa="chatik-open-in-new-tab-button"]',
+    "chatik_conversation": '[data-qa*="chatik-conversation"], [data-qa*="chatik-chat-"], [data-qa*="conversations"]',
     "chat_attach_letter": (
         '[data-qa="chatik-chat-message-applicant-action-text"],'
         'text=Добавить сопроводительное'
