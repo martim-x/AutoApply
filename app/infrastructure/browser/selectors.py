@@ -82,4 +82,24 @@ SEL = {
         "textarea"
     ),
     "chat_message": '[data-qa="chat-message"]',
+    # New chatik chat (jobs.tut.by / rabota.by 2026).
+    "chatik_activator": (
+        '[data-qa="chatikActivator-button"],'
+        '[data-qa="chatik-activator-navi-item"]'
+    ),
+    "chatik_conversation": '[data-qa*="chatik-conversation"], [data-qa*="chatik-chat-"]',
+    "chat_attach_letter": (
+        '[data-qa="chatik-chat-message-applicant-action-text"],'
+        'text=Добавить сопроводительное'
+    ),
+    "chat_send_btn": (
+        '[data-qa="chatik-do-send-message"],'
+        'button[aria-label*="отправить сообщение"]'
+    ),
+    "chat_upload_file": 'input[data-qa="upload-file-input"]',
+    "chat_new_message": (
+        '[data-qa="chatik-chat-message"],'
+        '[data-qa="chat-message"],'
+        '[data-qa*="chatik-message"]'
+    ),
 }

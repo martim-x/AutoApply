@@ -752,10 +752,13 @@ class PlaywrightBrowserGateway:
                             status = "error:unknown"
                             attempts = 0
                             saw_unverified = False
+                            saw_apply_error = False
                             for attempts in range(1, s.apply_retries + 1):
                                 status = self._try_apply_once(page, letter, dry_run)
                                 if status == "error:unverified":
                                     saw_unverified = True
+                                if str(status).startswith("error:"):
+                                    saw_apply_error = True
                                 if status in (
                                     "applied", "skipped", "archived", "dry_run",
                                     "need_manual", "captcha",
@@ -769,7 +772,11 @@ class PlaywrightBrowserGateway:
                                         expect=SEL["response_btn"],
                                     )
                                     time.sleep(s.load_retry_delay)
-                            if saw_unverified and status == "skipped":
+                            # "skipped" means the after-apply block was seen; if an
+                            # earlier attempt errored, that response is ours.
+                            if status == "skipped" and (
+                                saw_apply_error or saw_unverified
+                            ):
                                 status = "applied"
 
                         duration_ms = int((time.time() - t0) * 1000)
@@ -833,7 +840,7 @@ class PlaywrightBrowserGateway:
                         msg = f"[{cat}] {title[:70]}"
                         if hint:
                             msg += f" — {hint}"
-                        payload = {
+                        payload: dict[str, Any] = {
                             "url": vac.url,
                             "status": status,
                             "hint": hint,
@@ -841,11 +848,13 @@ class PlaywrightBrowserGateway:
                                 urlparse(vac.url).netloc if vac.url else ""
                             ),
                         }
+                        if str(status).startswith("error:"):
+                            payload["debug"] = self._apply_debug(page)
                         uow.journal.log(profile, status, msg, payload=payload)
 
                         if status == "applied" and not dry_run:
                             chat_result = self._send_chat_followup(
-                                page, vac.url, letter, limiter, s
+                                page, vac.url, letter, limiter, s, title=title
                             )
                             if chat_result == "chat_sent":
                                 uow.journal.log(
@@ -1116,6 +1125,29 @@ class PlaywrightBrowserGateway:
         return False
 
     @staticmethod
+    def _apply_debug(page) -> dict[str, Any]:
+        """Snapshot of the page state when an apply error happens."""
+        out: dict[str, Any] = {"page_url": "", "selectors": {}}
+        try:
+            out["page_url"] = page.url
+        except Exception:
+            pass
+        for key in (
+            "response_form",
+            "submit_response",
+            "already",
+            "chat_link",
+            "response_btn",
+            "letter_toggle",
+            "response_success",
+        ):
+            try:
+                out["selectors"][key] = page.locator(SEL[key]).count()
+            except Exception:
+                out["selectors"][key] = -1
+        return out
+
+    @staticmethod
     def _looks_applied(page) -> bool:
         """Best-effort confirmation that the response actually went through."""
         try:
@@ -1128,6 +1160,18 @@ class PlaywrightBrowserGateway:
                     continue
         except Exception:
             pass
+        # «Написать сообщение» link appears in the after-apply block — the
+        # most reliable sign on the current rabota.by markup.
+        try:
+            loc = page.locator(SEL["chat_link"])
+            for i in range(min(loc.count(), 3)):
+                try:
+                    if loc.nth(i).is_visible(timeout=800):
+                        return True
+                except Exception:
+                    continue
+        except Exception:
+            pass
         try:
             loc = page.locator(SEL["response_success"])
             if loc.count() and loc.first.is_visible(timeout=500):
@@ -1135,6 +1179,13 @@ class PlaywrightBrowserGateway:
         except Exception:
             pass
         return False
+
+    def _settled_looks_applied(self, page) -> bool:
+        """Like _looks_applied but gives the page one more chance to update."""
+        if self._looks_applied(page):
+            return True
+        time.sleep(1.5)
+        return self._looks_applied(page)
 
     def _try_apply_once(self, page, letter: str, dry_run: bool) -> str:
         from playwright.sync_api import TimeoutError as PwTimeout
@@ -1151,6 +1202,10 @@ class PlaywrightBrowserGateway:
         try:
             btn.wait_for(state="visible", timeout=10_000)
         except PwTimeout:
+            # No «Откликнуться» button — the response may already have gone
+            # through on a previous attempt (after-apply block is present).
+            if self._settled_looks_applied(page):
+                return "applied"
             return "error:no_response_button"
         if dry_run:
             return "dry_run"
@@ -1187,7 +1242,7 @@ class PlaywrightBrowserGateway:
         # Legacy flow: in-page popup with a single letter textarea.
         area = page.locator(SEL["letter_area"]).first
         try:
-            if area.count() and area.is_visible(timeout=2000):
+            if area.count() and area.is_visible(timeout=4000):
                 area.click()
                 area.fill(letter)
         except Exception:
@@ -1195,7 +1250,7 @@ class PlaywrightBrowserGateway:
         submit = page.locator(SEL["submit_response"]).first
         submit_clicked = False
         try:
-            if submit.count() and submit.is_visible(timeout=2000):
+            if submit.count() and submit.is_visible(timeout=4000):
                 submit.click()
                 try:
                     page.keyboard.press("Escape")
@@ -1206,11 +1261,11 @@ class PlaywrightBrowserGateway:
             pass
         if not submit_clicked:
             # Some boards apply on the first click without a popup.
-            if self._looks_applied(page):
+            if self._settled_looks_applied(page):
                 return "applied"
             return "error:no_submit"
         # Confirm the response is recorded; otherwise let the caller retry.
-        if self._looks_applied(page):
+        if self._settled_looks_applied(page):
             return "applied"
         return "error:unverified"
 
@@ -1256,26 +1311,26 @@ class PlaywrightBrowserGateway:
 
         submit = page.locator(SEL["submit_response"]).first
         try:
-            if not (submit.count() and submit.is_visible(timeout=4_000)):
+            if not (submit.count() and submit.is_visible(timeout=8_000)):
                 # No submit button: the response may still have gone through
                 # instantly (button on vacancy page already reads "Вы откликнулись").
-                if self._looks_applied(page):
+                if self._settled_looks_applied(page):
                     return "applied"
                 return "error:no_submit"
             submit.click(timeout=4_000)
         except Exception:
-            if self._looks_applied(page):
+            if self._settled_looks_applied(page):
                 return "applied"
             return "error:no_submit"
         blocker = self._detect_blockers(page)
         if blocker:
             return blocker
         try:
-            page.wait_for_selector(SEL["response_success"], timeout=5_000)
+            page.wait_for_selector(SEL["response_success"], timeout=8_000)
             return "applied"
         except PwTimeout:
             pass
-        if self._looks_applied(page):
+        if self._settled_looks_applied(page):
             return "applied"
         return "error:unverified"
 
@@ -1298,11 +1353,17 @@ class PlaywrightBrowserGateway:
         message: str,
         limiter: RateLimiter,
         s: Settings,
+        title: str = "",
     ) -> str:
         """Best-effort: open the employer chat and send the cover letter.
 
         Returns "chat_sent" / "chat_skipped". Never raises; the apply
         result already recorded — chat is a bonus, not a gate.
+
+        Chatik flow (rabota.by 2026):
+          «Чаты» button in header → conversation list → pick by vacancy title,
+          or a direct «Написать сообщение» link on the vacancy page.
+          Inside: «Добавить сопроводительное» → textarea → send button.
         """
         try:
             if not s.chat_after_apply:
@@ -1311,6 +1372,7 @@ class PlaywrightBrowserGateway:
             if not message:
                 return "chat_skipped"
 
+            # 1. Direct chat link on the vacancy page (after-apply block).
             self._goto(page, vac_url, limiter, expect=SEL["response_btn"])
             chat_url = ""
             link = page.locator(SEL["chat_link"]).first
@@ -1319,50 +1381,114 @@ class PlaywrightBrowserGateway:
                     chat_url = (link.get_attribute("href") or "").strip()
             except Exception:
                 chat_url = ""
-
-            if not chat_url:
-                parsed = urlparse(vac_url)
-                vid = vacancy_id_from_url(vac_url)
-                if vid:
-                    chat_url = urljoin(
-                        f"{parsed.scheme}://{parsed.netloc}",
-                        f"/applicant/conversations/{vid}",
-                    )
-            if not chat_url:
-                return "chat_skipped"
-
-            self._goto(page, chat_url, limiter, expect="")
-            time.sleep(s.settle_ms / 1000.0)
-
-            disabled = page.locator(SEL["chat_disabled"]).first
-            try:
-                if disabled.count() and disabled.is_visible(timeout=1500):
+            if chat_url:
+                chat_url = urljoin(
+                    f"{urlparse(vac_url).scheme}://{urlparse(vac_url).netloc}",
+                    chat_url,
+                )
+                self._goto(page, chat_url, limiter, expect="")
+            else:
+                # 2. Header «Чаты» → pick the conversation by vacancy title.
+                activator = page.locator(SEL["chatik_activator"]).first
+                try:
+                    if activator.count() and activator.is_visible(timeout=2000):
+                        activator.click(timeout=3000)
+                    else:
+                        return "chat_skipped"
+                except Exception:
                     return "chat_skipped"
-            except Exception:
-                pass
+                time.sleep(max(1.0, s.settle_ms / 1000.0))
+                picked = self._pick_chatik_conversation(page, title)
+                if not picked:
+                    return "chat_skipped"
 
+            time.sleep(max(1.0, s.settle_ms / 1000.0))
+            return self._send_chatik_message(page, message, s)
+        except Exception:
+            return "chat_skipped"
+
+    def _pick_chatik_conversation(self, page, title: str) -> bool:
+        """Find and open the conversation whose subject matches the vacancy."""
+
+        items = page.locator(SEL["chatik_conversation"])
+        try:
+            if items.count() == 0:
+                items = page.locator('div[data-qa*="chatik"], li[data-qa*="chatik"]')
+            for i in range(min(items.count(), 60)):
+                item = items.nth(i)
+                try:
+                    if not item.is_visible(timeout=800):
+                        continue
+                    text = (item.inner_text(timeout=800) or "").strip()
+                except Exception:
+                    continue
+                hay = title.casefold()
+                if hay and (hay[:40] in text.casefold()):
+                    item.click(timeout=2000)
+                    return True
+        except Exception:
+            pass
+        # Fallback: open the first conversation with a send box.
+        try:
             box = page.locator(SEL["chat_input"]).first
+            if box.count() and box.is_visible(timeout=2000):
+                return True
+            items.first.click(timeout=2000)
+            return True
+        except Exception:
+            pass
+        return False
+
+    def _send_chatik_message(self, page, message: str, s: Settings) -> str:
+        """Attach the cover letter via «Добавить сопроводительное» and send."""
+
+        disabled = page.locator(SEL["chat_disabled"]).first
+        try:
+            if disabled.count() and disabled.is_visible(timeout=1200):
+                return "chat_skipped"
+        except Exception:
+            pass
+
+        # «Добавить сопроводительное» opens a composer popup with a textarea.
+        attach = page.locator(SEL["chat_attach_letter"]).first
+        try:
+            if attach.count() and attach.is_visible(timeout=3000):
+                attach.click(timeout=3000)
+                time.sleep(max(0.8, s.settle_ms / 1000.0))
+        except Exception:
+            pass
+
+        box = page.locator(SEL["chat_input"]).first
+        try:
+            if not (box.count() and box.is_visible(timeout=5_000)):
+                return "chat_skipped"
+            box.click(timeout=2_000)
+            box.fill(message)
+        except Exception:
+            return "chat_skipped"
+
+        send = page.locator(SEL["chat_send_btn"]).first
+        try:
+            if send.count() and send.is_visible(timeout=1500):
+                send.click(timeout=3_000)
+            else:
+                page.keyboard.press("Enter")
+        except Exception:
             try:
-                if not (box.count() and box.is_visible(timeout=5_000)):
-                    return "chat_skipped"
-                box.click(timeout=2_000)
-                box.fill(message)
                 page.keyboard.press("Enter")
             except Exception:
                 return "chat_skipped"
 
-            time.sleep(max(1.0, s.settle_ms / 1000.0))
-            sent = page.locator(SEL["chat_message"]).last
-            try:
-                if sent.count() and sent.is_visible(timeout=1500):
-                    text = (sent.inner_text(timeout=1500) or "").strip()
-                    if text and text[:40] in message:
-                        return "chat_sent"
-            except Exception:
-                pass
-            return "chat_skipped"
+        time.sleep(max(1.5, s.settle_ms / 1000.0))
+        try:
+            sent = page.locator(SEL["chat_new_message"]).last
+            if sent.count() and sent.is_visible(timeout=2000):
+                text = (sent.inner_text(timeout=1500) or "").strip()
+                if text and message[:40] in text:
+                    return "chat_sent"
         except Exception:
-            return "chat_skipped"
+            pass
+        return "chat_skipped"
 
     @staticmethod
     def _page_text(page) -> str:
